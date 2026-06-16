@@ -36,11 +36,11 @@ def test_awaiting_lessons_empty_input():
 # ---- Reader doubles ----
 
 class FakeLocator:
-    def __init__(self, *, text="", children=None, attrs=None, present_selectors=None):
+    def __init__(self, *, text="", children=None, estimates=None):
         self._text = text
         self._children = children if children is not None else []
-        self._attrs = attrs or {}
-        self._present = set(present_selectors or [])
+        # estimates: list of .exercise-estimate-view texts for this row.
+        self._estimates = estimates
         self.click_count = 0
 
     @property
@@ -50,18 +50,17 @@ class FakeLocator:
     def all(self):
         return list(self._children)
 
-    def get_attribute(self, name):
-        return self._attrs.get(name)
-
     def inner_text(self):
         return self._text
 
     def locator(self, selector):
-        if selector == selectors.LESSON_NAME:
-            return FakeLocator(text=self._text)
-        if selector in self._present:
-            return FakeLocator(children=[FakeLocator()])  # count() > 0
-        return FakeLocator(children=[])  # absent -> count() == 0
+        if selector == selectors.GRADE_ESTIMATE_VIEW and self._estimates is not None:
+            return FakeLocator(
+                children=[FakeLocator(text=t) for t in self._estimates]
+            )
+        if selector == selectors.LESSON_OPEN_BUTTON:
+            return FakeLocator(children=[self])
+        return FakeLocator(children=[])
 
     def count(self):
         return len(self._children)
@@ -71,8 +70,9 @@ class FakeLocator:
 
 
 class FakePage:
-    def __init__(self, *, locators=None):
+    def __init__(self, *, locators=None, url=""):
         self._locators = locators or {}
+        self.url = url
         self.clicked = []
 
     def locator(self, selector):
@@ -90,37 +90,50 @@ def test_open_progress_clicks_progress_button():
     assert btn.click_count == 1
 
 
-def test_list_lessons_reads_id_name_and_status():
+def test_list_lessons_reads_name_number_and_status():
+    # Awaiting: a grade widget offering "Оценить упражнение" with no score.
     awaiting_row = FakeLocator(
-        text="Lesson 14",
-        attrs={selectors.LESSON_ID_ATTR: "l14"},
-        present_selectors=[selectors.LESSON_STATUS_AWAITING],
+        text="Lesson 14: Entertainment",
+        estimates=["Оценить упражнение"],
     )
+    # Complete: every grade widget shows a score "N/M".
     complete_row = FakeLocator(
-        text="Lesson 13",
-        attrs={selectors.LESSON_ID_ATTR: "l13"},
-        present_selectors=[],  # no awaiting marker
+        text="Lesson 13: Travel",
+        estimates=["Оценить упражнение: 5/5"],
     )
     rows = FakeLocator(children=[awaiting_row, complete_row])
     page = FakePage(locators={selectors.LESSON_ROW: rows})
 
     lessons = list_lessons(page)
     assert lessons == [
-        Lesson(id="l14", name="Lesson 14", status="awaiting"),
-        Lesson(id="l13", name="Lesson 13", status="complete"),
+        Lesson(id="14", name="Lesson 14: Entertainment", status="awaiting", number="14"),
+        Lesson(id="13", name="Lesson 13: Travel", status="complete", number="13"),
     ]
 
 
-def test_open_lesson_clicks_open_button_inside_matched_row():
-    lesson = Lesson(id="l14", name="Lesson 14", status="awaiting")
-    composed = f"{selectors.LESSON_ROW}[{selectors.LESSON_ID_ATTR}='{lesson.id}']"
-    open_btn = FakeLocator()
+def test_open_lesson_clicks_and_parses_url_ids():
+    lesson = Lesson(id="14", name="Lesson 14: Entertainment", status="awaiting", number="14")
+    row = FakeLocator(text="Lesson 14: Entertainment")
 
-    class RowLocator(FakeLocator):
-        def locator(self, selector):
-            assert selector == selectors.LESSON_OPEN_BUTTON
-            return open_btn
+    class FilteringRows(FakeLocator):
+        def filter(self, has_text=None):
+            return row
 
-    page = FakePage(locators={composed: RowLocator()})
+    page = FakePage(
+        locators={selectors.LESSON_ROW: FilteringRows()},
+        url="https://edvibe.com/marathon/110326/lesson/1781437?pupil=3176678&section=0",
+    )
     open_lesson(page, lesson)
-    assert open_btn.click_count == 1
+    assert row.click_count == 1
+    assert lesson.lesson_url_id == "1781437"
+    assert lesson.pupil_id == "3176678"
+
+
+def test_parse_lesson_url_pure():
+    from edvibe_bot.scraper.progress import parse_lesson_url
+    lid, pid = parse_lesson_url(
+        "https://edvibe.com/marathon/110326/lesson/1781437?pupil=3176678&section=2"
+    )
+    assert lid == "1781437"
+    assert pid == "3176678"
+    assert parse_lesson_url("https://edvibe.com/cabinet/school/classes") == (None, None)

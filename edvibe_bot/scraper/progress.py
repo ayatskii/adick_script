@@ -1,7 +1,9 @@
 # edvibe_bot/scraper/progress.py
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import Page
 
@@ -9,31 +11,70 @@ from edvibe_bot import selectors
 from edvibe_bot.errors import SelectorError
 from edvibe_bot.scraper.dashboard import Student
 
+_LESSON_NUMBER_RE = re.compile(r"Lesson\s+(\d+)", re.IGNORECASE)
+
 
 @dataclass
 class Lesson:
-    id: str
-    name: str
-    status: str  # "awaiting" | "complete" | "other"
+    id: str                     # stable per-student key: the lesson number text
+    name: str                   # first text line ("Lesson 14: Entertainment")
+    status: str                 # "awaiting" | "complete" | "other"
+    number: str = ""            # parsed lesson number ("14")
+    lesson_url_id: str | None = None   # URL /lesson/{id} — captured on open
+    pupil_id: str | None = None        # URL ?pupil= — captured on open
 
 
 def open_progress(page: Page, student: Student) -> None:
     page.locator(selectors.STUDENT_PROGRESS_BTN).click()
 
 
+def _lesson_name(row_text: str) -> str:
+    """PURE: lesson name = first non-empty text line of the row."""
+    for line in row_text.splitlines():
+        if line.strip():
+            return line.strip()
+    return row_text.strip()
+
+
+def _lesson_number(name: str) -> str:
+    """PURE: parse "14" out of "Lesson 14: Entertainment"."""
+    match = _LESSON_NUMBER_RE.search(name)
+    return match.group(1) if match else ""
+
+
+def _row_is_awaiting(row) -> bool:
+    """An exercise (and so a lesson) is AWAITING grading when its
+    .exercise-estimate-view shows a clickable "Оценить упражнение" with NO
+    score yet. A graded one shows "N/M". The progress modal itself does not
+    mark awaiting, so we scan the row's grade widgets."""
+    estimates = row.locator(selectors.GRADE_ESTIMATE_VIEW)
+    for est in estimates.all():
+        if _estimate_is_ungraded(est.inner_text()):
+            return True
+    return False
+
+
+def _estimate_is_ungraded(estimate_text: str) -> bool:
+    """PURE: the grade widget is ungraded (awaiting) when it offers the
+    "Оценить упражнение" trigger and shows no "N/M" score."""
+    text = estimate_text or ""
+    if "Оценить упражнение" not in text:
+        return False
+    return re.search(r"\d+\s*/\s*\d+", text) is None
+
+
 def list_lessons(page: Page) -> list[Lesson]:
     rows = page.locator(selectors.LESSON_ROW)
     lessons: list[Lesson] = []
     for row in rows.all():
-        lesson_id = row.get_attribute(selectors.LESSON_ID_ATTR)
-        if not lesson_id:
-            raise SelectorError(
-                f"lesson row missing id attribute {selectors.LESSON_ID_ATTR!r}"
-            )
-        name = row.locator(selectors.LESSON_NAME).inner_text().strip()
-        is_awaiting = row.locator(selectors.LESSON_STATUS_AWAITING).count() > 0
-        status = "awaiting" if is_awaiting else "complete"
-        lessons.append(Lesson(id=lesson_id, name=name, status=status))
+        name = _lesson_name(row.inner_text().strip())
+        if not name:
+            raise SelectorError("lesson row has no visible text/name")
+        number = _lesson_number(name)
+        status = "awaiting" if _row_is_awaiting(row) else "complete"
+        lessons.append(
+            Lesson(id=number or name, name=name, status=status, number=number)
+        )
     return lessons
 
 
@@ -42,8 +83,25 @@ def awaiting_lessons(lessons: list[Lesson]) -> list[Lesson]:
     return [lesson for lesson in lessons if lesson.status == "awaiting"]
 
 
+def parse_lesson_url(url: str) -> tuple[str | None, str | None]:
+    """PURE: extract (lesson_url_id, pupil_id) from a lesson URL like
+    /marathon/110326/lesson/1781437?pupil=3176678&section=0."""
+    match = selectors.LESSON_URL_RE.search(url)
+    lesson_url_id = match.group(1) if match else None
+    pupil_values = parse_qs(urlparse(url).query).get(selectors.PUPIL_QS, [])
+    pupil_id = pupil_values[0] if pupil_values else None
+    return lesson_url_id, pupil_id
+
+
 def open_lesson(page: Page, lesson: Lesson) -> None:
-    row = page.locator(
-        f"{selectors.LESSON_ROW}[{selectors.LESSON_ID_ATTR}='{lesson.id}']"
+    """Click this lesson's "Открыть урок"; navigation lands on
+    /marathon/{m}/lesson/{lessonId}?pupil={pupilId}. Parse the lessonId and
+    pupilId from the URL — these are the stable ids used for the per-exercise
+    composite key."""
+    row = page.locator(selectors.LESSON_ROW).filter(
+        has_text=f"Lesson {lesson.number}" if lesson.number else lesson.name
     )
-    row.locator(selectors.LESSON_OPEN_BUTTON).click()
+    row.locator(selectors.LESSON_OPEN_BUTTON).first.click()
+    lesson_url_id, pupil_id = parse_lesson_url(page.url)
+    lesson.lesson_url_id = lesson_url_id
+    lesson.pupil_id = pupil_id

@@ -27,9 +27,6 @@ class FakeLocator:
         return list(self._children)
 
     def locator(self, selector):
-        # A child row resolves nested selectors to a single locator.
-        if selector == selectors.STUDENT_NAME:
-            return FakeLocator(text=self._text)
         return FakeLocator()
 
     def get_attribute(self, name):
@@ -95,16 +92,28 @@ def test_open_marathon_runs_the_six_steps_in_order():
     ]
 
 
-def test_list_students_builds_students_from_rows():
+def test_list_students_builds_students_from_row_text():
+    # No id attribute on the live DOM: id is the numeric text in the row,
+    # name is the first non-numeric line.
     rows = FakeLocator(
         children=[
-            FakeLocator(attrs={selectors.STUDENT_ID_ATTR: "s1"}, text="Анель"),
-            FakeLocator(attrs={selectors.STUDENT_ID_ATTR: "s2"}, text="Bauyrzhan"),
+            FakeLocator(text="Анель\n3176678"),
+            FakeLocator(text="Bauyrzhan\n3176679"),
         ]
     )
     page = FakePage(locators={selectors.STUDENT_ROW: rows})
     students = list_students(page)
-    assert students == [Student(id="s1", name="Анель"), Student(id="s2", name="Bauyrzhan")]
+    assert students == [
+        Student(id="3176678", name="Анель"),
+        Student(id="3176679", name="Bauyrzhan"),
+    ]
+
+
+def test_list_students_raises_when_no_numeric_id():
+    rows = FakeLocator(children=[FakeLocator(text="Анель")])
+    page = FakePage(locators={selectors.STUDENT_ROW: rows})
+    with pytest.raises(Exception):
+        list_students(page)
 
 
 def test_list_students_empty_returns_empty_list():

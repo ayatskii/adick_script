@@ -26,14 +26,29 @@ def open_marathon(page: Page, settings: Settings) -> None:
 
 
 def list_students(page: Page) -> list[Student]:
+    """Read each student card. There is no id attribute on the live DOM — the
+    student id is the numeric text shown in the row; the name is the rest of
+    the visible text (first non-numeric line)."""
     rows = page.locator(selectors.STUDENT_ROW)
     students: list[Student] = []
     for row in rows.all():
-        student_id = row.get_attribute(selectors.STUDENT_ID_ATTR)
-        if not student_id:
+        text = row.inner_text().strip()
+        match = selectors.STUDENT_ID_RE.search(text)
+        if not match:
             raise SelectorError(
-                f"student row missing id attribute {selectors.STUDENT_ID_ATTR!r}"
+                f"student row has no numeric id in text {text!r}"
             )
-        name = row.locator(selectors.STUDENT_NAME).inner_text().strip()
+        student_id = match.group(0)
+        # name = the row text with the id removed, first non-empty line.
+        name = _student_name(text, student_id)
         students.append(Student(id=student_id, name=name))
     return students
+
+
+def _student_name(text: str, student_id: str) -> str:
+    """PURE: extract the display name from the student row text."""
+    for line in text.splitlines():
+        cleaned = line.replace(student_id, "").strip()
+        if cleaned:
+            return cleaned
+    return text.replace(student_id, "").strip()
