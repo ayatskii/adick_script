@@ -35,12 +35,13 @@ def build_messages(req: "EvalRequest") -> "list[dict]":
     else:
         rubric = RUBRIC_TEXT
 
+    score_max = req.score_max
     system_content = (
         f"{rubric}\n\n"
         "Return your evaluation as a STRICT JSON object and nothing else "
         "(no markdown, no code fences, no commentary). The object MUST have "
         "exactly these keys:\n"
-        '  "score": integer 0-10 (overall mark on a 0 to 10 scale),\n'
+        f'  "score": integer 0-{score_max} (overall mark on a 0 to {score_max} scale),\n'
         '  "comment": string, a 1-2 sentence constructive comment IN ENGLISH '
         "addressed to the student,\n"
         '  "rationale": string, a brief internal justification (not shown to the student),\n'

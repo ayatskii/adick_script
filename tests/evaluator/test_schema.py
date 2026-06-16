@@ -27,6 +27,34 @@ def test_score_within_range_unchanged():
     assert Evaluation(score=7, comment="c", rationale="r", confidence=0.5).score == 7
 
 
+def test_score_clamped_to_per_exercise_max():
+    # Edvibe scores are per-exercise max (e.g. /5), NOT a fixed /10.
+    ev = Evaluation(score=9, comment="c", rationale="r", confidence=0.5, score_max=5)
+    assert ev.score == 5
+
+
+def test_score_within_per_exercise_max_unchanged():
+    ev = Evaluation(score=4, comment="c", rationale="r", confidence=0.5, score_max=5)
+    assert ev.score == 4
+
+
+def test_score_clamped_low_with_max():
+    ev = Evaluation(score=-2, comment="c", rationale="r", confidence=0.5, score_max=5)
+    assert ev.score == 0
+
+
+def test_eval_request_default_and_explicit_score_max():
+    default = EvalRequest(
+        exercise_type=ExerciseType.TEXT, section="W", prompt_text="p", student_answer="a"
+    )
+    assert default.score_max == 10
+    explicit = EvalRequest(
+        exercise_type=ExerciseType.TEXT, section="W", prompt_text="p",
+        student_answer="a", score_max=5,
+    )
+    assert explicit.score_max == 5
+
+
 def test_confidence_clamped_high():
     assert Evaluation(score=5, comment="c", rationale="r", confidence=2.0).confidence == 1.0
 

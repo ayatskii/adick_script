@@ -17,7 +17,7 @@ _PARSE_FAILED = Evaluation(
 )
 
 
-def _parse(content: "str | None") -> "Evaluation | None":
+def _parse(content: "str | None", score_max: int) -> "Evaluation | None":
     if not content:
         return None
     try:
@@ -32,6 +32,7 @@ def _parse(content: "str | None") -> "Evaluation | None":
             comment=str(data["comment"]),
             rationale=str(data["rationale"]),
             confidence=float(data["confidence"]),
+            score_max=score_max,
         )
     except (KeyError, TypeError, ValueError):
         return None
@@ -50,7 +51,7 @@ def evaluate(req: "EvalRequest", settings: "Settings") -> "Evaluation":
                 response_format={"type": "json_object"},
             )
             content = response.choices[0].message.content
-            evaluation = _parse(content)
+            evaluation = _parse(content, req.score_max)
             if evaluation is not None:
                 return evaluation
             logger.warning(

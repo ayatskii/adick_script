@@ -81,6 +81,22 @@ def test_success_parses_and_clamps(monkeypatch):
     assert holder["client"]._completions.calls == 1
 
 
+def test_score_clamped_to_request_score_max(monkeypatch):
+    # The model returns 9 but the exercise is out of 5 → clamp to 5.
+    payload = json.dumps(
+        {"score": 9, "comment": "ok", "rationale": "r", "confidence": 0.8}
+    )
+    _install_fake(monkeypatch, [payload])
+    req = EvalRequest(
+        exercise_type=ExerciseType.TEXT, section="Writing",
+        prompt_text="Describe your weekend.",
+        student_answer="I went to the park.", score_max=5,
+    )
+    result = text_mod.evaluate(req, _settings())
+    assert result.score == 5
+    assert result.score_max == 5
+
+
 def test_uses_evaluation_model(monkeypatch):
     payload = json.dumps(
         {"score": 5, "comment": "ok", "rationale": "r", "confidence": 0.7}

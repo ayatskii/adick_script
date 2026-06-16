@@ -64,3 +64,13 @@ def test_build_messages_text_uses_text_rubric():
 def test_build_messages_manual_unknown_falls_back_to_text_rubric():
     msgs = build_messages(_make_req(ExerciseType.MANUAL_UNKNOWN))
     assert RUBRIC_TEXT in msgs[0]["content"]
+
+
+def test_build_messages_requests_score_out_of_real_max():
+    req = EvalRequest(
+        exercise_type=ExerciseType.TEXT, section="W", prompt_text="p",
+        student_answer="a", score_max=5,
+    )
+    system = build_messages(req)[0]["content"]
+    assert "0-5" in system          # asks for a score out of the real max, not 10
+    assert "0-10" not in system
