@@ -224,5 +224,64 @@ class Store:
         return self.get_exercise_status(student_id, lesson_id, exercise_id) is not None
 
     # ------------------------------------------------------------------
-    # Task 6 stubs: lesson-completion-sentinel methods (NOT implemented here)
+    # Lesson completion sentinel methods (Task 6)
     # ------------------------------------------------------------------
+
+    # Lesson completion is tracked by a sentinel ledger row (exercise_id == LESSON_SENTINEL).
+    def record_lesson_completion_intent(
+        self, student_id: str, lesson_id: str, run_id: str
+    ) -> None:
+        # status=in_progress, written BEFORE the irreversible "Завершить урок" click.
+        self.record_exercise(
+            LedgerEntry(
+                student_id=student_id,
+                lesson_id=lesson_id,
+                exercise_id=LESSON_SENTINEL,
+                student_name="",
+                lesson_name="",
+                exercise_no="",
+                type="",
+                proposed_score=None,
+                proposed_comment=None,
+                confidence=None,
+                submitted=False,
+                dry_run=False,
+                run_id=run_id,
+                status=LedgerStatus.IN_PROGRESS.value,
+            )
+        )
+
+    def record_lesson_completed(
+        self, student_id: str, lesson_id: str, run_id: str, dry_run: bool
+    ) -> None:
+        # status=completed, written AFTER the click returns. A real (non-dry)
+        # completion counts as submitted; dry-run never submits.
+        self.record_exercise(
+            LedgerEntry(
+                student_id=student_id,
+                lesson_id=lesson_id,
+                exercise_id=LESSON_SENTINEL,
+                student_name="",
+                lesson_name="",
+                exercise_no="",
+                type="",
+                proposed_score=None,
+                proposed_comment=None,
+                confidence=None,
+                submitted=not dry_run,
+                dry_run=dry_run,
+                run_id=run_id,
+                status=LedgerStatus.COMPLETED.value,
+            )
+        )
+
+    def get_lesson_status(self, student_id: str, lesson_id: str) -> "str | None":
+        return self.get_exercise_status(student_id, lesson_id, LESSON_SENTINEL)
+
+    def is_lesson_completed(self, student_id: str, lesson_id: str) -> bool:
+        # True ONLY when the sentinel reached the terminal completed state.
+        return self.get_lesson_status(student_id, lesson_id) == LedgerStatus.COMPLETED.value
+
+    def is_lesson_completion_attempted(self, student_id: str, lesson_id: str) -> bool:
+        # Any sentinel row exists (including in_progress).
+        return self.get_lesson_status(student_id, lesson_id) is not None
