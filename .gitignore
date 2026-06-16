@@ -13,6 +13,7 @@ storage_state.json
 reports/
 audio_cache/
 .cache/
+.playwright-mcp/
 
 # Python
 __pycache__/
