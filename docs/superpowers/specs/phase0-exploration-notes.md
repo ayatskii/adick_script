@@ -111,9 +111,44 @@ Opening a lesson navigates to:
 - **Audio — confirmed.** `download_audio` = `context.request.get(currentSrc)`; reader uses
   `audio.currentSrc` (fallback `src`).
 
-### STILL PENDING — needs a live ungraded exercise (R0.2)
-The grade-modal selectors are best guesses, marked `# CONFIRM-LIVE` in `selectors.py`:
-`SCORE_INPUT="input[type=number]"`, `COMMENT_INPUT="textarea"`, `GRADE_SAVE_BTN="text=Продолжить"`,
-plus the real per-exercise max from the modal. The dry-run path never clicks these, so the
-bot is safe to run read-only; a supervised capture on a real awaiting exercise must confirm
-them (open modal, capture, close WITHOUT saving) before any full_auto run.
+### R0.2 — RESOLVED: live capture on Nurdana Ardaqqyzy, Lesson 18 (2026-06-16)
+
+Captured read-only on a real awaiting exercise (opened the grade modal, dumped its
+DOM, closed with Escape — **nothing graded, nothing submitted**). Target: pupil
+**3190603** (Nurdana Ardaqqyzy), lesson **1798271** ("Science and Innovations").
+
+**Detection assumption from R0.1 was WRONG and is now corrected.**
+`.exercise-estimate-view` renders **only for ALREADY-GRADED exercises** (it shows the
+awarded "N/M"). An **ungraded** manual exercise has *no* estimate-view at all — its
+marker is the **"Оценить упражнение" trigger button** (`span.button-content`) plus the
+hint text **"Это упражнение с ручной проверкой, оцени…"**. The old code keyed
+`has_grade_button` off the estimate-view, so it classified every ungraded exercise as
+auto-checked and graded nothing. Fixed in `scraper/lesson.py`:
+`has_grade_button = block has GRADE_EXERCISE_BTN AND not is_graded`;
+`is_graded` comes from a parseable "N/M" inside an estimate-view.
+
+**Lesson player rendering.** Direct navigation to a `/lesson/{id}` URL leaves the SPA
+stuck on **"Загрузка марафона"** with `0 из 0 уроков`. The player only renders fully
+when reached via marathon → student → **Прогресс ученика** → **Открыть урок**, and even
+then needs **~6–8 s** plus a gate on `.sections-list_item` existing AND the loading text
+being gone (`lesson.wait_lesson_ready`). The "Открыть урок" click triggers an **async SPA
+navigation** — `page.url` stays on the students page for a moment, so `open_lesson` now
+`wait_for_url("/lesson/")` before parsing ids.
+
+**Sections.** Exercises are split across sections reached via `?section=n` (left rail
+`.sections-list_item`; the trailing item is "Завершить урок"). On L18 the ungraded
+exercises were in sections 0, 1 and 4 — so the runner now walks **every** section
+(`gather_exercises`) and navigates back to an exercise's section before grading it.
+The composite idempotency key includes the section index: `f"{lesson_id}:s{n}:{number}"`.
+
+**Grade modal — CONFIRMED (`# CONFIRM-LIVE` markers removed).**
+- Container `.tir-modal`, title "Поставить оценку".
+- Score: `.tir-modal input[type=number]` (defaults to "5"). **Max score = 5**
+  ("Максимальное количество баллов: 5") → `selectors.SCORE_MAX`.
+- Comment: hidden behind a **toggle switch** (`.tir-toggle`, label "Добавить
+  комментарий"). Flip it on → reveals `.tir-modal textarea` (placeholder
+  "Ваш комментарий…"). The poster toggles before filling.
+- Submit: blue `.tir-modal button.blue:has-text('Продолжить')`; cancel = gray "Отмена".
+
+**Safety:** entire capture was read-only — modal opened then Escaped, no score posted,
+no lesson completed.

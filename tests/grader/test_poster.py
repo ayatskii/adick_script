@@ -6,9 +6,29 @@ from edvibe_bot import selectors
 
 
 class FakeLocator:
+    """Records click/fill against the innermost selector. filter()/first/
+    wait_for() are pass-throughs. count() reports 0 for the comment textarea
+    (initially hidden behind the toggle) so the toggle gets clicked."""
+
     def __init__(self, selector, page):
         self._selector = selector
         self._page = page
+
+    def filter(self, **kwargs):
+        return self
+
+    @property
+    def first(self):
+        return self
+
+    def locator(self, selector):
+        return FakeLocator(selector, self._page)
+
+    def wait_for(self, **kwargs):
+        return None
+
+    def count(self):
+        return 0 if self._selector == selectors.COMMENT_INPUT_REL else 1
 
     def click(self):
         self._page.actions.append(("click", self._selector))
@@ -65,10 +85,11 @@ def test_grade_exercise_full_run_exact_sequence(monkeypatch):
     page = FakePage()
     grade_exercise(page, _exercise(), _evaluation(), _settings(), dry_run=False)
     assert page.actions == [
-        ("click", selectors.GRADE_EXERCISE_BTN),
-        ("fill", selectors.SCORE_INPUT, "7"),
-        ("fill", selectors.COMMENT_INPUT, "Good effort."),
-        ("click", selectors.GRADE_SAVE_BTN),
+        ("click", selectors.GRADE_EXERCISE_BTN),       # scoped to the exercise block
+        ("fill", selectors.SCORE_INPUT_REL, "7"),      # inside .tir-modal
+        ("click", selectors.COMMENT_TOGGLE_REL),       # reveal the comment field
+        ("fill", selectors.COMMENT_INPUT_REL, "Good effort."),
+        ("click", selectors.GRADE_SAVE_BTN_REL),       # blue "Продолжить"
     ]
     assert slept == [0.0]
 

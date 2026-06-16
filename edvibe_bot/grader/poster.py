@@ -23,11 +23,36 @@ def grade_exercise(
     """
     if dry_run:
         return
-    page.locator(selectors.GRADE_EXERCISE_BTN).click()
-    page.locator(selectors.SCORE_INPUT).fill(str(evaluation.score))
-    page.locator(selectors.COMMENT_INPUT).fill(evaluation.comment)
-    page.locator(selectors.GRADE_SAVE_BTN).click()
+
+    # Scope the grade trigger to THIS exercise's block (a section can hold
+    # several ungraded exercises; a bare page-wide locator would be ambiguous).
+    block = page.locator(selectors.EXERCISE_BLOCK).filter(
+        has_text=ex_number_text(exercise.number)
+    ).first if exercise.number else page.locator(selectors.EXERCISE_BLOCK).first
+    block.locator(selectors.GRADE_EXERCISE_BTN).first.click()
+
+    # Wait for the Vue grade modal ("Поставить оценку") to render.
+    modal = page.locator(selectors.GRADE_MODAL)
+    modal.wait_for(state="visible", timeout=15000)
+
+    modal.locator(selectors.SCORE_INPUT_REL).fill(str(evaluation.score))
+
+    # The comment field is hidden behind a toggle; flip it on, then fill.
+    if evaluation.comment:
+        toggle = modal.locator(selectors.COMMENT_TOGGLE_REL)
+        textarea = modal.locator(selectors.COMMENT_INPUT_REL)
+        if textarea.count() == 0:
+            toggle.first.click()
+            textarea.first.wait_for(state="visible", timeout=5000)
+        textarea.first.fill(evaluation.comment)
+
+    modal.locator(selectors.GRADE_SAVE_BTN_REL).first.click()
     time.sleep(settings.pacing_seconds)
+
+
+def ex_number_text(number: str) -> str:
+    """PURE: the leading exercise-number token used to disambiguate blocks."""
+    return number.strip()
 
 
 def complete_lesson(page: Page, dry_run: bool) -> None:

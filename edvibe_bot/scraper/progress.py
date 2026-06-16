@@ -102,6 +102,13 @@ def open_lesson(page: Page, lesson: Lesson) -> None:
         has_text=f"Lesson {lesson.number}" if lesson.number else lesson.name
     )
     row.locator(selectors.LESSON_OPEN_BUTTON).first.click()
+    # The lesson opens via an async SPA transition; the URL only becomes
+    # /marathon/{m}/lesson/{id}?pupil={p} a moment after the click. Wait for it
+    # before parsing, otherwise we read the stale students-page URL.
+    try:
+        page.wait_for_url(lambda url: "/lesson/" in url, timeout=30000)
+    except Exception:  # noqa: BLE001 - fall through to best-effort parse
+        pass
     lesson_url_id, pupil_id = parse_lesson_url(page.url)
     lesson.lesson_url_id = lesson_url_id
     lesson.pupil_id = pupil_id

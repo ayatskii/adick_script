@@ -70,6 +70,7 @@ class FakeStore:
 class FakePage:
     def __init__(self):
         self.shots = []
+        self.url = "https://edvibe.com/marathon/1/lesson/1?pupil=1&section=0"
 
     def screenshot(self, path):
         self.shots.append(path)
@@ -120,7 +121,10 @@ def _wire(monkeypatch, *, exercises, poster,
         lambda ls: [x for x in ls if x.status == "awaiting"],
     )
     monkeypatch.setattr(runner_mod, "open_lesson", lambda p, le: None)
-    monkeypatch.setattr(runner_mod, "list_exercises", lambda p, lid=None, section="": exercises)
+    monkeypatch.setattr(
+        runner_mod, "gather_exercises", lambda p, url=None, lid=None: exercises
+    )
+    monkeypatch.setattr(runner_mod, "goto_section", lambda p, url, idx: None)
 
     def _dl(ctx, url):
         return download
@@ -382,13 +386,13 @@ def test_selector_error_screenshots_and_continues(monkeypatch):
 
     calls = {"n": 0}
 
-    def _le(p, lid=None, section=""):
+    def _le(p, url=None, lid=None):
         calls["n"] += 1
         if calls["n"] == 1:
             raise SelectorError("boom on first lesson")
         return [_text_exercise(element_id="ex-2")]
 
-    monkeypatch.setattr(runner_mod, "list_exercises", _le)
+    monkeypatch.setattr(runner_mod, "gather_exercises", _le)
     report = run(RunConfig(mode="full_auto"), _settings(), store)
     assert report.errors == 1
     assert page.shots and "error-run-fake-s1-l1" in page.shots[0]
@@ -411,10 +415,10 @@ def test_screenshot_failure_is_audited_not_swallowed(monkeypatch):
     # re-point ensure_logged_in after _wire (which overrode it)
     monkeypatch.setattr(runner_mod, "ensure_logged_in", lambda ctx, s: bad_page)
 
-    def _le(p, lid=None, section=""):
+    def _le(p, url=None, lid=None):
         raise SelectorError("boom")
 
-    monkeypatch.setattr(runner_mod, "list_exercises", _le)
+    monkeypatch.setattr(runner_mod, "gather_exercises", _le)
     report = run(RunConfig(mode="full_auto"), _settings(), store)
     assert report.errors == 1
     # the screenshot failure was audited (not silently swallowed)

@@ -33,20 +33,44 @@ LESSON_ROW = ".marathon-modules-lessons-lesson-li"
 LESSON_OPEN_BUTTON = "text=Открыть урок"
 # lesson name = LESSON_ROW innerText first line ("Lesson 14: Entertainment").
 
-# Lesson view (confirmed)
+# Lesson view (confirmed live on Nurdana L18, 2026-06-16)
+# The marathon lesson player needs ~6-8s to render; gate on SECTION_ITEM existing
+# AND the "Загрузка марафона" loading text being gone before scraping.
 LESSON_LAYOUT = ".lesson-layout.marathon-lesson-layout"
+LESSON_LOADING_TEXT = "Загрузка марафона"     # present while the SPA player loads
+SECTION_ITEM = ".sections-list_item"          # left-rail section switcher rows
 EXERCISE_BLOCK = ".exercise-wrapper"
 EXERCISE_AUDIO = "audio"                      # read .currentSrc
-GRADE_ESTIMATE_VIEW = ".exercise-estimate-view"
-GRADE_EXERCISE_BTN = "text=Оценить упражнение"   # a DIV, not a <button>
-COMPLETE_LESSON_BTN = "text=Завершить урок"      # a DIV, not a <button>
-# section switch: append ?section=n to the lesson URL (0-indexed).
+COMPLETE_LESSON_BTN = "text=Завершить урок"   # a .sections-list_item div, NOT a <button>
+# section switch: CLICK the nth SECTION_ITEM (0-indexed). The ?section=n URL param
+# does NOT work — the SPA canonicalises it back to section 0.
 
-# Grade modal (best-guess — only reachable on a live ungraded exercise;
-# the dry-run path never clicks these, so unconfirmed is safe).
-SCORE_INPUT = "input[type=number]"            # CONFIRM-LIVE
-COMMENT_INPUT = "textarea"                     # CONFIRM-LIVE
-GRADE_SAVE_BTN = "text=Продолжить"             # CONFIRM-LIVE
+# --- Ungraded-exercise detection (confirmed) ---
+# IMPORTANT: `.exercise-estimate-view` exists ONLY for ALREADY-GRADED exercises
+# (it renders the awarded score). UNGRADED manual-check exercises do NOT have it.
+# The real "awaiting grading" marker is the "Оценить упражнение" trigger button,
+# accompanied by the description "Это упражнение с ручной проверкой, оцени...".
+GRADE_ESTIMATE_VIEW = ".exercise-estimate-view"   # graded-only score widget
+GRADE_EXERCISE_BTN = "text=Оценить упражнение"     # span.button-content; click → opens grade modal
+MANUAL_CHECK_HINT = "Это упражнение с ручной проверкой"  # ungraded manual-check marker text
+
+# --- Grade modal (CONFIRMED live, read-only Phase 0 capture) ---
+# Opened by clicking GRADE_EXERCISE_BTN. Vue-rendered container `.tir-modal`,
+# title "Поставить оценку", form `.exercise-estimate-form`.
+GRADE_MODAL = ".tir-modal"
+GRADE_MODAL_TITLE = "Поставить оценку"
+SCORE_MAX = 5                                    # "Максимальное количество баллов: 5"
+# Absolute (page-scoped) forms:
+SCORE_INPUT = ".tir-modal input[type=number]"   # default value "5"
+COMMENT_TOGGLE = ".tir-modal .exercise-estimate-form .tir-toggle"  # reveals the comment field
+COMMENT_INPUT = ".tir-modal textarea"           # placeholder "Ваш комментарий..."
+GRADE_SAVE_BTN = ".tir-modal button.blue:has-text('Продолжить')"  # blue submit; "Отмена" = cancel
+GRADE_CANCEL_BTN = ".tir-modal button.gray:has-text('Отмена')"
+# Modal-RELATIVE forms (used after scoping a locator to GRADE_MODAL):
+SCORE_INPUT_REL = "input[type=number]"
+COMMENT_TOGGLE_REL = ".exercise-estimate-form .tir-toggle"
+COMMENT_INPUT_REL = "textarea"
+GRADE_SAVE_BTN_REL = "button.blue:has-text('Продолжить')"
 
 # URL / text patterns (identity source — replaces the dropped *_ID_ATTR).
 LESSON_URL_RE = re.compile(r"/marathon/\d+/lesson/(\d+)")   # group(1) = lessonId

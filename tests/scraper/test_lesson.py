@@ -9,6 +9,7 @@ from edvibe_bot.scraper.lesson import (
     parse_estimate,
     parse_number,
 )
+from edvibe_bot.scraper.lesson import _lesson_base_url
 
 
 # ---- PURE: classify_exercise ----
@@ -52,6 +53,19 @@ def test_parse_estimate_ungraded():
     assert parse_estimate("") == (False, None)
 
 
+# ---- PURE: _lesson_base_url ----
+
+def test_lesson_base_url_strips_section_param():
+    assert _lesson_base_url(
+        "https://edvibe.com/marathon/110326/lesson/1798271?pupil=3190603&section=4"
+    ) == "https://edvibe.com/marathon/110326/lesson/1798271?pupil=3190603"
+
+
+def test_lesson_base_url_noop_without_section():
+    url = "https://edvibe.com/marathon/110326/lesson/1798271?pupil=3190603"
+    assert _lesson_base_url(url) == url
+
+
 # ---- Reader doubles ----
 
 class FakeLocator:
@@ -91,9 +105,13 @@ class FakePage:
         return FakeLocator(children=[])
 
 
-def _block(*, text, audio_src=None, estimate=None):
-    """estimate=None → no .exercise-estimate-view (auto-checked).
-    estimate="..." → the widget text ("Оценить упражнение" / "...: 5/5")."""
+def _block(*, text, audio_src=None, grade_button=False, graded_score=None):
+    """Models the confirmed live DOM:
+    - grade_button=True  → an ungraded manual exercise exposing the
+      "Оценить упражнение" trigger (selectors.GRADE_EXERCISE_BTN).
+    - graded_score="N/M" → an already-graded exercise whose
+      .exercise-estimate-view shows the awarded score.
+    - neither             → an auto-checked exercise."""
     nested = {
         selectors.EXERCISE_AUDIO: FakeLocator(
             children=[FakeLocator(attrs={"currentSrc": audio_src})]
@@ -101,8 +119,13 @@ def _block(*, text, audio_src=None, estimate=None):
             else []
         ),
         selectors.GRADE_ESTIMATE_VIEW: (
-            FakeLocator(children=[FakeLocator(text=estimate)])
-            if estimate is not None
+            FakeLocator(children=[FakeLocator(text=f"Оценить упражнение: {graded_score}")])
+            if graded_score is not None
+            else FakeLocator(children=[])
+        ),
+        selectors.GRADE_EXERCISE_BTN: (
+            FakeLocator(children=[FakeLocator(text="Оценить упражнение")])
+            if grade_button
             else FakeLocator(children=[])
         ),
     }
@@ -113,18 +136,19 @@ def test_list_exercises_builds_audio_exercise_with_composite_id():
     block = _block(
         text="1.1 Describe your weekend.",
         audio_src="https://media-a.edvibe.com/files/LessonExerciseAudioRecordings/x.mp3",
-        estimate="Оценить упражнение",
+        grade_button=True,
     )
     page = FakePage(blocks=[block])
     exercises = list_exercises(page, lesson_id="1781437", section="Speaking")
     assert len(exercises) == 1
     ex = exercises[0]
-    assert ex.element_id == "1781437:1.1"     # composite, URL lesson id + number
+    assert ex.element_id == "1781437:s0:1.1"  # composite: lesson id + section + number
     assert ex.section == "Speaking"
     assert ex.number == "1.1"
     assert ex.type is ExerciseType.AUDIO
-    assert ex.has_grade_button is True        # ungraded estimate present
+    assert ex.has_grade_button is True        # ungraded grade trigger present
     assert ex.is_graded is False
+    assert ex.score_max == selectors.SCORE_MAX   # defaults to modal max (5)
     assert ex.audio_url.endswith("x.mp3")
     assert ex.answer_text is None
 
@@ -133,21 +157,24 @@ def test_list_exercises_builds_text_exercise():
     block = _block(
         text="2 Write about your hobby. I like reading.",
         audio_src=None,
-        estimate="Оценить упражнение",
+        grade_button=True,
     )
     page = FakePage(blocks=[block])
     ex = list_exercises(page, lesson_id="L", section="Writing")[0]
     assert ex.type is ExerciseType.TEXT
     assert "I like reading." in ex.answer_text
     assert ex.audio_url is None
-    assert ex.element_id == "L:2"
+    assert ex.element_id == "L:s0:2"
 
 
 def test_list_exercises_already_graded_is_skipped_by_flags():
+    # Even if a graded block still echoes the trigger text, `not is_graded`
+    # guards it from being re-graded.
     block = _block(
         text="3 Write a sentence.",
         audio_src=None,
-        estimate="Оценить упражнение: 5/5",
+        grade_button=True,
+        graded_score="5/5",
     )
     page = FakePage(blocks=[block])
     ex = list_exercises(page, lesson_id="L", section="Writing")[0]
@@ -156,8 +183,8 @@ def test_list_exercises_already_graded_is_skipped_by_flags():
     assert ex.has_grade_button is False       # graded → not a manual target
 
 
-def test_list_exercises_auto_checked_when_no_estimate_widget():
-    block = _block(text="4 Pick the correct word.", audio_src=None, estimate=None)
+def test_list_exercises_auto_checked_when_no_grade_trigger():
+    block = _block(text="4 Pick the correct word.", audio_src=None)
     page = FakePage(blocks=[block])
     ex = list_exercises(page, lesson_id="L", section="Grammar")[0]
     assert ex.type is ExerciseType.AUTO_CHECKED
@@ -165,7 +192,7 @@ def test_list_exercises_auto_checked_when_no_estimate_widget():
 
 
 def test_list_exercises_no_composite_id_when_number_missing():
-    block = _block(text="Describe your day.", estimate="Оценить упражнение")
+    block = _block(text="Describe your day.", grade_button=True)
     page = FakePage(blocks=[block])
     ex = list_exercises(page, lesson_id="L", section="Speaking")[0]
     assert ex.number == ""

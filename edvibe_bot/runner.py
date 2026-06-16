@@ -18,7 +18,11 @@ from edvibe_bot.scraper.progress import (
     awaiting_lessons,
     open_lesson,
 )
-from edvibe_bot.scraper.lesson import list_exercises, Exercise
+from edvibe_bot.scraper.lesson import (
+    gather_exercises,
+    goto_section,
+    Exercise,
+)
 from edvibe_bot.evaluator import audio, text
 from edvibe_bot.grader import poster
 
@@ -196,10 +200,13 @@ def run(
 
                 try:
                     open_lesson(page, lesson)
+                    base_lesson_url = page.url
                     # lesson_id derived from the lesson URL after navigation
                     # (open_lesson parsed it); falls back to the row id.
                     lesson_id = lesson.lesson_url_id or lesson.id
-                    exercises = list_exercises(page, lesson_id)
+                    # Walk every section (?section=n) — ungraded exercises live
+                    # across sections, not just the default section 0.
+                    exercises = gather_exercises(page, base_lesson_url, lesson_id)
                     manual = [
                         e
                         for e in exercises
@@ -430,6 +437,11 @@ def run(
                                 dry_run=dry_run,
                             )
                         )
+                        # The grade modal is opened from the exercise's own
+                        # section page; navigate there before clicking (no-op in
+                        # dry_run, which never touches the platform).
+                        if not dry_run:
+                            goto_section(page, base_lesson_url, ex.section_index)
                         poster.grade_exercise(
                             page, ex, evaluation, settings, dry_run=dry_run
                         )

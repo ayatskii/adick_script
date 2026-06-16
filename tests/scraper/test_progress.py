@@ -82,6 +82,10 @@ class FakePage:
             self._locators[selector] = loc
         return loc
 
+    def wait_for_url(self, predicate, timeout=None):
+        # The fake URL is already the post-navigation lesson URL.
+        return None
+
 
 def test_open_progress_clicks_progress_button():
     btn = FakeLocator()
