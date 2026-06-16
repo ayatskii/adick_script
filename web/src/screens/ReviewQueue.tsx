@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ScreenProps, ReviewItem, ReviewItemType, ReviewItemStatus } from '../types'
-import { REVIEW_ITEMS } from '../data'
+import { useApp } from '../AppContext'
 import StatusBadge from '../components/StatusBadge'
 
 // ============================================================
@@ -119,10 +119,11 @@ function cardBg(status: ReviewItemStatus): string {
 
 export function ReviewQueue(props: ScreenProps) {
   const { showToast } = props
+  const { reviewItems: seedItems } = useApp()
 
   // Per-item editable state (status, score, comment, edited) — local
   const [items, setItems] = useState<ReviewItem[]>(() =>
-    REVIEW_ITEMS.map((it) => ({ ...it })),
+    seedItems.map((it) => ({ ...it })),
   )
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
 
@@ -536,7 +537,7 @@ export function ReviewQueue(props: ScreenProps) {
                   </div>
                   <textarea
                     value={it.comment}
-                    onChange={(e) => setComment(it.id, REVIEW_ITEMS.find((r) => r.id === it.id)!.comment, e.target.value)}
+                    onChange={(e) => setComment(it.id, seedItems.find((r) => r.id === it.id)?.comment ?? it.comment, e.target.value)}
                     style={{
                       minHeight: '58px',
                       resize: 'vertical',

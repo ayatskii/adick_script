@@ -1,5 +1,5 @@
 import type { ScreenProps } from '../types'
-import { RUN_ROWS } from '../data'
+import { useApp } from '../AppContext'
 import { StatusBadge } from '../components/StatusBadge'
 
 // ============================================================
@@ -262,6 +262,7 @@ function StatTileCard({ t }: { t: StatTile }) {
 // Dashboard screen
 // ------------------------------------------------------------
 export function Dashboard({ setScreen, startRun }: ScreenProps) {
+  const { runRows: RUN_ROWS } = useApp()
   return (
     <div>
       {/* Region 1 — Stat tiles */}

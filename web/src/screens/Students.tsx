@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react'
 import type { ScreenProps, StudentRow } from '../types'
-import { STUDENT_ROWS } from '../data'
+import { useApp } from '../AppContext'
 import StatusBadge from '../components/StatusBadge'
 
 const mincho = "'Shippori Mincho B1', serif"
@@ -72,6 +72,7 @@ function ExpandedRow({ student }: { student: StudentRow }) {
 }
 
 export function Students({ showToast }: ScreenProps) {
+  const { studentRows: STUDENT_ROWS } = useApp()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   function toggle(id: string) {

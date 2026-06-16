@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { ScreenProps, RunRow, TimelineEntry } from '../types'
-import { RUN_ROWS, TIMELINE_ENTRIES, RECONCILE_ROWS } from '../data'
+import { useApp } from '../AppContext'
 import StatusBadge from '../components/StatusBadge'
 
 // ============================================================
@@ -59,11 +59,12 @@ function nodeTimestamp(started: string, tsOffset: number): string {
 
 export function History(props: ScreenProps) {
   const { showToast } = props
+  const { runRows: RUN_ROWS, timelineEntries: TIMELINE_ENTRIES, reconcileRows: RECONCILE_ROWS } = useApp()
   const [tab, setTab] = useState<HistoryTab>('runs')
-  const [selectedId, setSelectedId] = useState<string>(RUN_ROWS[0].id)
+  const [selectedId, setSelectedId] = useState<string>(() => RUN_ROWS[0]?.id ?? '')
 
   const selectedRun = RUN_ROWS.find((r) => r.id === selectedId) ?? RUN_ROWS[0]
-  const dry = isDryRun(selectedRun)
+  const dry = selectedRun ? isDryRun(selectedRun) : false
 
   const tabBtnStyle = (active: boolean): CSSProperties => ({
     display: 'inline-flex',
@@ -119,14 +120,16 @@ export function History(props: ScreenProps) {
 
       {tab === 'runs' ? (
         <RunsTab
+          runRows={RUN_ROWS}
+          timelineEntries={TIMELINE_ENTRIES}
           selectedRun={selectedRun}
           selectedId={selectedId}
           onSelect={setSelectedId}
           dry={dry}
-          onExport={() => showToast('ok', `Exported run ${selectedRun.id} as CSV`)}
+          onExport={() => showToast('ok', `Exported run ${selectedRun?.id ?? ''} as CSV`)}
         />
       ) : (
-        <ReconcileTab />
+        <ReconcileTab reconcileRows={RECONCILE_ROWS} />
       )}
     </div>
   )
@@ -137,14 +140,17 @@ export function History(props: ScreenProps) {
 // ============================================================
 
 interface RunsTabProps {
-  selectedRun: RunRow
+  runRows: RunRow[]
+  timelineEntries: TimelineEntry[]
+  selectedRun: RunRow | undefined
   selectedId: string
   onSelect: (id: string) => void
   dry: boolean
   onExport: () => void
 }
 
-function RunsTab({ selectedRun, selectedId, onSelect, dry, onExport }: RunsTabProps) {
+function RunsTab({ runRows: RUN_ROWS, timelineEntries: TIMELINE_ENTRIES, selectedRun, selectedId, onSelect, dry, onExport }: RunsTabProps) {
+  if (!selectedRun) return null
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.1fr', gap: '18px', alignItems: 'start' }}>
       {/* Left — All runs table */}
@@ -427,7 +433,7 @@ function TimelineNode({ entry, dry, started, last }: TimelineNodeProps) {
 // Reconcile tab
 // ============================================================
 
-function ReconcileTab() {
+function ReconcileTab({ reconcileRows: RECONCILE_ROWS }: { reconcileRows: import('../types').ReconcileRow[] }) {
   return (
     <div
       style={{

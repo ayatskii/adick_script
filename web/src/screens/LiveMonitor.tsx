@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ScreenProps, RunMode, StatusKind } from '../types'
-import { STUDENT_ROWS, REVIEW_ITEMS } from '../data'
+import type { ScreenProps, RunMode, StatusKind, StudentRow, ReviewItem } from '../types'
+import type { RunEvent } from '../api'
+import { useApp } from '../AppContext'
 import { StatusBadge } from '../components/StatusBadge'
 
 // ============================================================
@@ -59,7 +60,9 @@ type NodeStatus = StatusKind
 // Exercise rows / scores / comments are pulled from the review seed
 // where a (student, ex) pair matches, else sensible defaults.
 // ============================================================
-function buildQueue(total: number, students: number): SimNode[] {
+function buildQueue(total: number, students: number, studentRows: StudentRow[], reviewItems: ReviewItem[]): SimNode[] {
+  const STUDENT_ROWS = studentRows
+  const REVIEW_ITEMS = reviewItems
   const exTemplates: { ex: string; type: ExType }[] = [
     { ex: '1.2', type: 'audio' },
     { ex: '2.1', type: 'text' },
@@ -231,6 +234,7 @@ function StopGlyph() {
 // ============================================================
 export function LiveMonitor(props: ScreenProps) {
   const { run, mascotName, showToast, openDialog, startRun, defaultRunMode } = props
+  const { activeRunId, liveEvents, studentRows, reviewItems } = useApp()
 
   // ---- EMPTY STATE ----
   if (run.total === 0) {
@@ -302,12 +306,16 @@ export function LiveMonitor(props: ScreenProps) {
       finished={run.finished}
       showToast={showToast}
       openDialog={openDialog}
+      activeRunId={activeRunId}
+      liveEvents={liveEvents}
+      studentRows={studentRows}
+      reviewItems={reviewItems}
     />
   )
 }
 
 // ============================================================
-// Active / Done view — owns the simulation
+// Active / Done view — owns the simulation (fallback) and WS-driven mode
 // ============================================================
 interface ActiveProps {
   total: number
@@ -317,13 +325,23 @@ interface ActiveProps {
   finished: boolean
   showToast: ScreenProps['showToast']
   openDialog: ScreenProps['openDialog']
+  /** When non-null, a real backend run is in progress */
+  activeRunId: string | null
+  /** Incoming WS events from the backend */
+  liveEvents: RunEvent[]
+  studentRows: StudentRow[]
+  reviewItems: ReviewItem[]
 }
 
 function ActiveMonitor(props: ActiveProps) {
-  const { total, students, mode, active, finished, showToast, openDialog } = props
+  const { total, students, mode, active, finished, showToast, openDialog,
+    activeRunId, liveEvents, studentRows, reviewItems } = props
 
-  // queue is stable for the lifetime of this run config
-  const queue = useMemo(() => buildQueue(total, students), [total, students])
+  // Determine if we're in WS-driven mode (real backend run)
+  const wsMode = activeRunId !== null
+
+  // queue is stable for the lifetime of this run config (simulation fallback)
+  const queue = useMemo(() => buildQueue(total, students, studentRows, reviewItems), [total, students, studentRows, reviewItems])
   const studentNames = useMemo(() => {
     const seen: string[] = []
     for (const n of queue) if (!seen.includes(n.student)) seen.push(n.student)
@@ -373,12 +391,13 @@ function ActiveMonitor(props: ActiveProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ---- the 900ms tick ----
+  // ---- the 900ms tick (simulation fallback — disabled when WS is active) ----
   // Each cursor value drives one timer: after TICK_MS we log the node at
   // `cursor`, then advance the cursor (which re-runs this effect). When
   // we run past the end we emit the completion line and set `done`.
   useEffect(() => {
     if (!active || done) return
+    if (wsMode) return  // WS-driven: skip simulation tick
     if (cursor >= queue.length) return
 
     const id = setTimeout(() => {
@@ -441,15 +460,80 @@ function ActiveMonitor(props: ActiveProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [done])
 
+  // ============================================================
+  // WS-driven state: derived from liveEvents when wsMode is active
+  // ============================================================
+
+  // Build log lines from WS events
+  const wsLogLines = useMemo((): LogLine[] => {
+    if (!wsMode) return []
+    let id = 0
+    return liveEvents
+      .filter(ev => ev.type === 'log' || ev.type === 'run_started' || ev.type === 'run_complete')
+      .map(ev => {
+        const level: LogLevel = (() => {
+          if (ev.type === 'run_started') return 'info'
+          if (ev.type === 'run_complete') return 'ok'
+          if (ev.data?.level) return ev.data.level as LogLevel
+          return 'info'
+        })()
+        const text = ev.data?.message ?? ev.message ?? ev.type
+        return { id: id++, ts: ev.ts ? new Date(ev.ts).toISOString().substr(11, 8) : '00:00:00', level, text }
+      })
+  }, [wsMode, liveEvents])
+
+  // Extract latest progress from WS events
+  const wsProgress = useMemo(() => {
+    if (!wsMode) return null
+    const prog = [...liveEvents].reverse().find(ev => ev.type === 'progress')
+    if (!prog?.data) return null
+    return {
+      current: typeof prog.data.current === 'number' ? prog.data.current : 0,
+      total: typeof prog.data.total === 'number' ? prog.data.total : total,
+      studentsDone: typeof prog.data.students_done === 'number' ? prog.data.students_done : 0,
+      students: typeof prog.data.students === 'number' ? prog.data.students : students,
+      pct: typeof prog.data.pct === 'number' ? prog.data.pct : 0,
+    }
+  }, [wsMode, liveEvents, total, students])
+
+  // Most recent exercise event for detail card
+  const wsCurrentExercise = useMemo(() => {
+    if (!wsMode) return null
+    const ev = [...liveEvents].reverse().find(e => e.type === 'exercise' || e.type === 'graded' || e.type === 'flagged')
+    if (!ev?.data) return null
+    return ev
+  }, [wsMode, liveEvents])
+
+  // Map WS events to per-node statuses for the tree
+  // Each node key = `${student}|${lesson}|${ex}`
+  const wsNodeStatusMap = useMemo((): Map<string, StatusKind> => {
+    const map = new Map<string, StatusKind>()
+    if (!wsMode) return map
+    for (const ev of liveEvents) {
+      if (!ev.data) continue
+      const key = `${ev.data.student ?? ''}|${ev.data.lesson ?? ''}|${ev.data.exercise ?? ''}`
+      if (ev.type === 'exercise') map.set(key, 'evaluating')
+      else if (ev.type === 'graded') map.set(key, 'graded')
+      else if (ev.type === 'skipped') map.set(key, 'skipped')
+      else if (ev.type === 'flagged') map.set(key, 'flagged')
+      else if (ev.type === 'error') map.set(key, 'error')
+    }
+    return map
+  }, [wsMode, liveEvents])
+
   // ---- derived progress numbers ----
   // when the global run is finished (stopped/completed), pin progress
   // to its observed processed count.
   const runFinished = finished || done
-  const current = Math.min(cursor, total)
-  const pct = total > 0 ? Math.round((current / total) * 100) : 0
+  const current = wsMode && wsProgress
+    ? wsProgress.current
+    : Math.min(cursor, total)
+  const pct = wsMode && wsProgress
+    ? wsProgress.pct
+    : (total > 0 ? Math.round((current / total) * 100) : 0)
 
-  // students fully done = students whose every queued node is processed
-  const studentsDone = useMemo(() => {
+  // students fully done = students whose every queued node is processed (sim fallback)
+  const simStudentsDone = useMemo(() => {
     if (current >= total) return students
     let count = 0
     for (let s = 0; s < studentNames.length; s++) {
@@ -458,6 +542,7 @@ function ActiveMonitor(props: ActiveProps) {
     }
     return Math.min(count, students)
   }, [current, total, students, studentNames, queue])
+  const studentsDone = wsMode && wsProgress ? wsProgress.studentsDone : simStudentsDone
 
   const eta = runFinished
     ? 'done'
@@ -475,22 +560,35 @@ function ActiveMonitor(props: ActiveProps) {
 
   // status of the detail node: 'evaluating' while it's the live cursor,
   // else its terminal outcome.
-  const detailStatus: StatusKind =
-    active && !done && currentNode && currentNode.i === cursor
+  const detailStatus: StatusKind = (() => {
+    if (wsMode && wsCurrentExercise) {
+      if (wsCurrentExercise.type === 'exercise') return 'evaluating'
+      if (wsCurrentExercise.type === 'graded') return 'graded'
+      if (wsCurrentExercise.type === 'flagged') return 'flagged'
+      if (wsCurrentExercise.type === 'error') return 'error'
+    }
+    return active && !done && currentNode && currentNode.i === cursor
       ? 'evaluating'
       : currentNode?.outcome ?? 'queued'
+  })()
 
   // ---- per-node live status helper for the tree ----
   const nodeStatus = (n: SimNode): NodeStatus => {
+    if (wsMode) {
+      const key = `${n.student}|${n.lesson}|${n.ex}`
+      return wsNodeStatusMap.get(key) ?? 'queued'
+    }
     if (active && !done && n.i === cursor) return 'evaluating'
     if (n.i < current) return n.outcome
     return 'queued'
   }
 
   const mb = modeBadge(mode)
-  const showStop = active && !done
+  const showStop = active && (!done || wsMode)
 
-  const filteredLog = filter === 'all' ? logLines : logLines.filter(l => l.level === filter)
+  // Use WS log lines when in WS mode, else simulation log lines
+  const activeLogLines = wsMode ? wsLogLines : logLines
+  const filteredLog = filter === 'all' ? activeLogLines : activeLogLines.filter(l => l.level === filter)
 
   // auto-scroll log to bottom when new lines arrive
   const logBodyRef = useRef<HTMLDivElement>(null)

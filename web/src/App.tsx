@@ -1,9 +1,16 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import type {
   ScreenId, RunState, RunMode, ToastState, ToastKind, DialogKind,
   AppHandlers, AppSharedState,
+  RunRow, ReviewItem, StudentRow, TimelineEntry, ReconcileRow, FlaggedItem,
 } from './types'
+import type { RunEvent } from './api'
 import { AppContext } from './AppContext'
+import {
+  getHealth, listRuns, listStudents, listQueue, listFlagged,
+  listReconcile, startRun as apiStartRun, stopRun as apiStopRun,
+  openRunStream, toRunRow,
+} from './api'
 import { Backdrop } from './components/Backdrop'
 import { Sidebar } from './components/Sidebar'
 import { TopBar } from './components/TopBar'
@@ -18,11 +25,10 @@ import { Students } from './screens/Students'
 import { History } from './screens/History'
 import { Flagged } from './screens/Flagged'
 import { Settings } from './screens/Settings'
-import { REVIEW_ITEMS, FLAGGED_ITEMS } from './data'
-
-// Count of pending review items for nav badge (seed = 6)
-const INITIAL_REVIEW_COUNT = REVIEW_ITEMS.filter(r => r.status === 'pending').length
-const INITIAL_FLAGGED_COUNT = FLAGGED_ITEMS.length
+import {
+  RUN_ROWS, REVIEW_ITEMS, STUDENT_ROWS, TIMELINE_ENTRIES,
+  RECONCILE_ROWS, FLAGGED_ITEMS,
+} from './data'
 
 const INITIAL_RUN: RunState = {
   active: false,
@@ -54,16 +60,61 @@ export function App() {
   const [run, setRun] = useState<RunState>(INITIAL_RUN)
   const [toast, setToast] = useState<ToastState | null>(null)
   const [dialog, setDialog] = useState<DialogKind>(null)
-  const [reviewCount] = useState(INITIAL_REVIEW_COUNT)
-  const [flaggedCount] = useState(INITIAL_FLAGGED_COUNT)
 
-  // editor-tweakable props (can be overridden via Settings in future)
+  // editor-tweakable props
   const mascotName = 'Vibe-Bot'
   const defaultRunMode: RunMode = 'dryrun'
 
-  // ============================================================
-  // Handlers
-  // ============================================================
+  // ---- API data state ----
+  const [online, setOnline] = useState(false)
+  const [runRows, setRunRows] = useState<RunRow[]>(RUN_ROWS)
+  const [reviewItems, setReviewItems] = useState<ReviewItem[]>(REVIEW_ITEMS)
+  const [studentRows, setStudentRows] = useState<StudentRow[]>(STUDENT_ROWS)
+  const [timelineEntries] = useState<TimelineEntry[]>(TIMELINE_ENTRIES)
+  const [reconcileRows, setReconcileRows] = useState<ReconcileRow[]>(RECONCILE_ROWS)
+  const [flaggedItems, setFlaggedItems] = useState<FlaggedItem[]>(FLAGGED_ITEMS)
+
+  // ---- Live run state ----
+  const [activeRunId, setActiveRunId] = useState<string | null>(null)
+  const [liveEvents, setLiveEvents] = useState<RunEvent[]>([])
+  const wsRef = useRef<WebSocket | null>(null)
+
+  // ---- Fetch on mount ----
+  useEffect(() => {
+    let cancelled = false
+
+    async function fetchAll() {
+      try {
+        // health check first — if it throws, we're offline
+        await getHealth()
+
+        const [runs, students, queue, flagged, reconcile] = await Promise.all([
+          listRuns(),
+          listStudents(),
+          listQueue(),
+          listFlagged(),
+          listReconcile(),
+        ])
+
+        if (cancelled) return
+
+        setOnline(true)
+        if (runs.length > 0) setRunRows(runs.map(toRunRow))
+        if (students.length > 0) setStudentRows(students)
+        if (queue.length > 0) setReviewItems(queue)
+        if (flagged.length > 0) setFlaggedItems(flagged)
+        if (reconcile.length > 0) setReconcileRows(reconcile)
+      } catch {
+        // Backend offline — keep seed data, stay offline
+        if (!cancelled) setOnline(false)
+      }
+    }
+
+    void fetchAll()
+    return () => { cancelled = true }
+  }, [])
+
+  // ---- Handlers ----
 
   const showToast = useCallback((kind: ToastKind, message: string) => {
     setToast({ kind, message })
@@ -71,25 +122,98 @@ export function App() {
 
   const dismissToast = useCallback(() => setToast(null), [])
 
-  const startRun = useCallback((mode: RunMode) => {
+  const startRun = useCallback(async (mode: RunMode) => {
+    // Optimistically transition to the live screen with a local run state
     setRun({
       active: true,
       mode,
-      total: 41, // spec: 41 lessons awaiting
+      total: 41,
       current: 0,
       studentsDone: 0,
-      students: 17, // spec: 17 pending students
+      students: 17,
       finished: false,
     })
     setDialog(null)
     setScreen('live')
-  }, [])
+    setLiveEvents([])
 
-  const stopRun = useCallback(() => {
+    if (!online) return  // offline — use local simulation only
+
+    try {
+      const resp = await apiStartRun({
+        mode,
+        scope: { all: true, students: null },
+        headed: false,
+        confidence_threshold: 0.70,
+      })
+
+      setActiveRunId(resp.run_id)
+
+      // Open WebSocket stream
+      if (wsRef.current) {
+        wsRef.current.close()
+        wsRef.current = null
+      }
+
+      const ws = openRunStream(resp.run_id, (ev) => {
+        setLiveEvents(prev => [...prev, ev])
+
+        // Mirror progress events into the shared RunState
+        if (ev.type === 'progress' && ev.data) {
+          const { current, total, students_done, students } = ev.data
+          setRun(prev => ({
+            ...prev,
+            current: typeof current === 'number' ? current : prev.current,
+            total: typeof total === 'number' ? total : prev.total,
+            studentsDone: typeof students_done === 'number' ? students_done : prev.studentsDone,
+            students: typeof students === 'number' ? students : prev.students,
+          }))
+        }
+
+        if (ev.type === 'run_complete') {
+          setRun(prev => ({ ...prev, active: false, finished: true }))
+          // Refresh run list after completion
+          listRuns().then(runs => {
+            if (runs.length > 0) setRunRows(runs.map(toRunRow))
+          }).catch(() => undefined)
+        }
+      })
+
+      wsRef.current = ws
+    } catch (err) {
+      showToast('warn', 'Could not reach backend — using offline simulation')
+    }
+  }, [online, showToast])
+
+  const stopRun = useCallback(async () => {
     setRun(prev => ({ ...prev, active: false, finished: true }))
     setDialog(null)
     showToast('warn', 'Run stopped — in-progress exercise will finish, then halt.')
-  }, [showToast])
+
+    if (activeRunId && online) {
+      try {
+        await apiStopRun(activeRunId)
+      } catch {
+        // best-effort
+      }
+    }
+
+    // Close WS
+    if (wsRef.current) {
+      wsRef.current.close()
+      wsRef.current = null
+    }
+    setActiveRunId(null)
+  }, [activeRunId, online, showToast])
+
+  // Clean up WS on unmount
+  useEffect(() => {
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close()
+      }
+    }
+  }, [])
 
   const openDialog = useCallback((kind: DialogKind) => {
     setDialog(kind)
@@ -97,9 +221,9 @@ export function App() {
 
   const handleDialogConfirm = useCallback((mode?: RunMode) => {
     if (dialog === 'full') {
-      startRun(mode ?? 'full')
+      void startRun(mode ?? 'full')
     } else if (dialog === 'stop') {
-      stopRun()
+      void stopRun()
     }
   }, [dialog, startRun, stopRun])
 
@@ -111,9 +235,11 @@ export function App() {
     }
   }, [run.active, openDialog])
 
-  // ============================================================
-  // Shared state + handlers (passed to screens)
-  // ============================================================
+  // ---- Derived counts for nav badges ----
+  const reviewCount = reviewItems.filter(r => r.status === 'pending').length
+  const flaggedCount = flaggedItems.length
+
+  // ---- Shared state + handlers ----
 
   const sharedState: AppSharedState = {
     screen,
@@ -121,12 +247,21 @@ export function App() {
     run,
     mascotName,
     defaultRunMode,
+    online,
+    runRows,
+    reviewItems,
+    studentRows,
+    timelineEntries,
+    reconcileRows,
+    flaggedItems,
+    activeRunId,
+    liveEvents,
   }
 
   const handlers: AppHandlers = {
     showToast,
-    startRun,
-    stopRun,
+    startRun: (mode: RunMode) => { void startRun(mode) },
+    stopRun: () => { void stopRun() },
     openDialog,
     setScreen,
   }

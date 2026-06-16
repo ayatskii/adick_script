@@ -1,5 +1,5 @@
 import type { ScreenProps } from '../types'
-import { FLAGGED_ITEMS } from '../data'
+import { useApp } from '../AppContext'
 
 // ============================================================
 // Raised-eyebrow mascot face — 28×28 round amber avatar glyph
@@ -35,6 +35,7 @@ function MascotRaisedBrow() {
 // ============================================================
 export function Flagged(props: ScreenProps) {
   const { showToast } = props
+  const { flaggedItems: FLAGGED_ITEMS } = useApp()
 
   return (
     <div

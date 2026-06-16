@@ -172,6 +172,24 @@ export interface AppSharedState {
   mascotName: string
   /** default run mode, editor-tweakable */
   defaultRunMode: RunMode
+  /** Whether the backend is reachable; false → seed data fallback */
+  online: boolean
+  /** Run rows (from API or seed) */
+  runRows: RunRow[]
+  /** Review queue items (from API or seed) */
+  reviewItems: ReviewItem[]
+  /** Student roster (from API or seed) */
+  studentRows: StudentRow[]
+  /** Timeline entries for the selected run (from API or seed) */
+  timelineEntries: TimelineEntry[]
+  /** Reconcile rows (from API or seed) */
+  reconcileRows: ReconcileRow[]
+  /** Flagged items (from API or seed) */
+  flaggedItems: FlaggedItem[]
+  /** Active backend run_id (null when no live run) */
+  activeRunId: string | null
+  /** Latest RunEvent stream state for LiveMonitor */
+  liveEvents: import('./api').RunEvent[]
 }
 
 /** Props all screen components receive */
