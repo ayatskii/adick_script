@@ -35,6 +35,9 @@ class FakeLocator:
     def inner_text(self):
         return self._text
 
+    def wait_for(self, state=None, timeout=None):
+        pass
+
     def click(self):
         self.click_count += 1
 
@@ -48,6 +51,9 @@ class FakePage:
 
     def goto(self, url):
         self.goto_calls.append(url)
+
+    def wait_for_load_state(self, state=None):
+        pass
 
     def locator(self, selector):
         loc = self._locators.get(selector)

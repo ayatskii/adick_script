@@ -15,14 +15,36 @@ class Student:
     name: str
 
 
+def _wait_click(page: Page, selector: str, timeout: int = 30000) -> None:
+    """Click the first match, waiting for the SPA to render it first.
+
+    `.first` dodges strict-mode duplicates (e.g. two "Фильтр" buttons); the
+    explicit visible-wait avoids racing the Vue SPA's async paint after a goto.
+    """
+    loc = page.locator(selector).first
+    loc.wait_for(state="visible", timeout=timeout)
+    loc.click()
+
+
 def open_marathon(page: Page, settings: Settings) -> None:
-    """classes -> Марафоны -> Pre-IELTS -> filter -> curator -> apply."""
+    """classes -> Марафоны -> Pre-IELTS, then a BEST-EFFORT curator filter.
+
+    The curator-filter selectors (CURATOR_OPTION) are unconfirmed (Phase 0
+    R0.3); if the filter flow fails we fall back to processing ALL marathon
+    students rather than aborting the run.
+    """
     page.goto(selectors.NAV_CLASSES)
-    page.locator(selectors.MARATHONS_TAB).click()
-    page.locator(selectors.PRE_IELTS_CARD).click()
-    page.locator(selectors.FILTER_BUTTON).click()
-    page.locator(selectors.CURATOR_OPTION).click()
-    page.locator(selectors.FILTER_APPLY).click()
+    page.wait_for_load_state("networkidle")
+    _wait_click(page, selectors.MARATHONS_TAB)
+    _wait_click(page, selectors.PRE_IELTS_CARD)
+    page.wait_for_load_state("networkidle")
+    try:
+        _wait_click(page, selectors.FILTER_BUTTON, timeout=8000)
+        _wait_click(page, selectors.CURATOR_OPTION, timeout=8000)
+        _wait_click(page, selectors.FILTER_APPLY, timeout=8000)
+        page.wait_for_load_state("networkidle")
+    except Exception:
+        pass  # curator filter unavailable/unconfirmed -> process all students
 
 
 def list_students(page: Page) -> list[Student]:
