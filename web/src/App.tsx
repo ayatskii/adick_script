@@ -67,6 +67,7 @@ export function App() {
 
   // ---- API data state ----
   const [online, setOnline] = useState(false)
+  const [phase0Done, setPhase0Done] = useState(false)
   const [runRows, setRunRows] = useState<RunRow[]>(RUN_ROWS)
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>(REVIEW_ITEMS)
   const [studentRows, setStudentRows] = useState<StudentRow[]>(STUDENT_ROWS)
@@ -86,7 +87,8 @@ export function App() {
     async function fetchAll() {
       try {
         // health check first — if it throws, we're offline
-        await getHealth()
+        const health = await getHealth()
+        if (!cancelled) setPhase0Done(health.phase0_done)
 
         const [runs, students, queue, flagged, reconcile] = await Promise.all([
           listRuns(),
@@ -140,8 +142,14 @@ export function App() {
     if (!online) return  // offline — use local simulation only
 
     try {
+      // Before Phase 0 the real runner can't drive a browser, so run the
+      // backend's no-op demo simulator instead of a real (failing) run.
+      const apiMode = phase0Done ? mode : 'demo'
+      if (!phase0Done) {
+        showToast('info', 'Phase 0 not done — running a simulated demo (nothing is submitted).')
+      }
       const resp = await apiStartRun({
-        mode,
+        mode: apiMode,
         scope: { all: true, students: null },
         headed: false,
         confidence_threshold: 0.70,
@@ -183,7 +191,7 @@ export function App() {
     } catch (err) {
       showToast('warn', 'Could not reach backend — using offline simulation')
     }
-  }, [online, showToast])
+  }, [online, phase0Done, showToast])
 
   const stopRun = useCallback(async () => {
     setRun(prev => ({ ...prev, active: false, finished: true }))

@@ -265,8 +265,11 @@ class RunManager:
             if handle.stop_flag.is_set():
                 raise RuntimeError("Run stopped before it started.")
 
+            # The frontend uses short mode names ('dryrun'/'full'); the bot-core
+            # runner gates submission on the canonical 'dry_run'/'full_auto'.
+            canonical_mode = {"dryrun": "dry_run", "full": "full_auto"}.get(mode, mode)
             run_config = RunConfig(
-                mode=mode,
+                mode=canonical_mode,
                 student_filter=student_filter,
                 max_students=max_students,
                 max_lessons=max_lessons,
