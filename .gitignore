@@ -1,0 +1,35 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+crednetials.json
+credentials.json
+storage_state.json
+
+# Local state / artifacts
+*.sqlite
+*.sqlite3
+*.db
+reports/
+audio_cache/
+.cache/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+*.local
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
