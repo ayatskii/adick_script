@@ -86,7 +86,7 @@ export const REVIEW_ITEMS: ReviewItem[] = [
     type: 'text',
     score: 9,
     conf: 0.91,
-    transcript: 'If I had more time, I would learn to play the guitar. She has been working here since 2019.',
+    transcript: 'If I _had_ more time, I _would learn_ to play the guitar. She _has been_ working here since 2019.',
     comment: 'Excellent — all conditional and perfect forms correct. Minor: spacing around blanks.',
     status: 'pending',
     edited: false,
