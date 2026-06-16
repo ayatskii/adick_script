@@ -54,12 +54,22 @@ class RunReport:
 EventCallback = Callable[[dict], None]
 
 
+# Edvibe blocks the default headless automation fingerprint at login (the form
+# fills but never authenticates). Disabling the AutomationControlled blink flag
+# + a realistic user-agent is required for login to succeed headless.
+_STEALTH_ARGS = ["--disable-blink-features=AutomationControlled"]
+_UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+
+
 @contextmanager
 def _launch_context(headed: bool):
     """Yield a (playwright_cm, browser_context). Patched out in unit tests."""
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=not headed)
-        context = browser.new_context()
+        browser = pw.chromium.launch(headless=not headed, args=_STEALTH_ARGS)
+        context = browser.new_context(user_agent=_UA)
         try:
             yield context
         finally:
