@@ -1,0 +1,7 @@
+# Backend (FastAPI) dependencies for the Edvibe Grader web app.
+# Install with: pip install -r requirements-backend.txt
+fastapi
+uvicorn[standard]
+websockets
+httpx
+# (pydantic and python-dotenv come transitively via edvibe_bot/requirements.txt)
