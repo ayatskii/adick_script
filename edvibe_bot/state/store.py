@@ -143,6 +143,86 @@ class Store:
             con.close()
 
     # ------------------------------------------------------------------
-    # Task 5 stubs: exercise-ledger UPSERT methods (NOT implemented here)
+    # Exercise-ledger UPSERT methods (Task 5)
+    # ------------------------------------------------------------------
+
+    # ledger keyed by (student_id, lesson_id, exercise_id); UPSERTs in place;
+    # submitted_at stamped iff submitted=True (NULL otherwise).
+    def record_exercise(self, entry: LedgerEntry) -> None:
+        submitted_at = _utc_now_iso() if entry.submitted else None
+        con = self._connect()
+        try:
+            con.execute(
+                """
+                INSERT INTO ledger (
+                    student_id, lesson_id, exercise_id,
+                    student_name, lesson_name, exercise_no, type,
+                    proposed_score, proposed_comment, confidence,
+                    submitted, submitted_at, dry_run, run_id, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(student_id, lesson_id, exercise_id) DO UPDATE SET
+                    student_name     = excluded.student_name,
+                    lesson_name      = excluded.lesson_name,
+                    exercise_no      = excluded.exercise_no,
+                    type             = excluded.type,
+                    proposed_score   = excluded.proposed_score,
+                    proposed_comment = excluded.proposed_comment,
+                    confidence       = excluded.confidence,
+                    submitted        = excluded.submitted,
+                    submitted_at     = excluded.submitted_at,
+                    dry_run          = excluded.dry_run,
+                    run_id           = excluded.run_id,
+                    status           = excluded.status
+                """,
+                (
+                    entry.student_id,
+                    entry.lesson_id,
+                    entry.exercise_id,
+                    entry.student_name,
+                    entry.lesson_name,
+                    entry.exercise_no,
+                    entry.type,
+                    entry.proposed_score,
+                    entry.proposed_comment,
+                    entry.confidence,
+                    1 if entry.submitted else 0,
+                    submitted_at,
+                    1 if entry.dry_run else 0,
+                    entry.run_id,
+                    entry.status,
+                ),
+            )
+            con.commit()
+        finally:
+            con.close()
+
+    def get_exercise_status(
+        self, student_id: str, lesson_id: str, exercise_id: str
+    ) -> "str | None":
+        con = self._connect()
+        try:
+            row = con.execute(
+                "SELECT status FROM ledger "
+                "WHERE student_id=? AND lesson_id=? AND exercise_id=?",
+                (student_id, lesson_id, exercise_id),
+            ).fetchone()
+        finally:
+            con.close()
+        return row[0] if row is not None else None
+
+    def is_exercise_done(
+        self, student_id: str, lesson_id: str, exercise_id: str
+    ) -> bool:
+        # True ONLY for terminal states.
+        status = self.get_exercise_status(student_id, lesson_id, exercise_id)
+        return status in {LedgerStatus.GRADED.value, LedgerStatus.COMPLETED.value}
+
+    def is_exercise_attempted(
+        self, student_id: str, lesson_id: str, exercise_id: str
+    ) -> bool:
+        # Any row exists (including in_progress).
+        return self.get_exercise_status(student_id, lesson_id, exercise_id) is not None
+
+    # ------------------------------------------------------------------
     # Task 6 stubs: lesson-completion-sentinel methods (NOT implemented here)
     # ------------------------------------------------------------------
