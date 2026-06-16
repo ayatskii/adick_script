@@ -1,4 +1,3 @@
-import React from 'react'
 import type { ScreenProps } from '../types'
 
 export function History(_props: ScreenProps) {

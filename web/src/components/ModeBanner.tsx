@@ -1,4 +1,3 @@
-import React from 'react'
 import type { RunMode } from '../types'
 
 interface ModeBannerProps {

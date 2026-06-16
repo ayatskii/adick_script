@@ -1,4 +1,3 @@
-import React from 'react'
 import type { ScreenId, RunState } from '../types'
 import { IconSun, IconMoon, IconPadlock } from './icons'
 

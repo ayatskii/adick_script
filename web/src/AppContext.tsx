@@ -1,4 +1,4 @@
-import React, { createContext, useContext } from 'react'
+import { createContext, useContext } from 'react'
 import type { ScreenProps } from './types'
 
 export const AppContext = createContext<ScreenProps | null>(null)

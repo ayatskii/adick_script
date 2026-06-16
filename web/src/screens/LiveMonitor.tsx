@@ -1,4 +1,3 @@
-import React from 'react'
 import type { ScreenProps } from '../types'
 
 export function LiveMonitor(_props: ScreenProps) {
