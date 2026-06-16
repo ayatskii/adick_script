@@ -167,11 +167,16 @@ def run(
 
                 try:
                     open_lesson(page, lesson)
-                    exercises = list_exercises(page)
+                    # lesson_id derived from the lesson URL after navigation
+                    # (open_lesson parsed it); falls back to the row id.
+                    lesson_id = lesson.lesson_url_id or lesson.id
+                    exercises = list_exercises(page, lesson_id)
                     manual = [
                         e
                         for e in exercises
-                        if e.has_grade_button and e.type in _MANUAL_TYPES
+                        if e.has_grade_button
+                        and not e.is_graded
+                        and e.type in _MANUAL_TYPES
                     ]
                     manual_count = len(manual)
                     graded_this_run = 0
@@ -285,13 +290,16 @@ def run(
                             continue
 
                         # ---- evaluate ----
+                        eval_req_kwargs = {
+                            "exercise_type": ex.type,
+                            "section": ex.section,
+                            "prompt_text": ex.prompt_text,
+                            "student_answer": answer,
+                        }
+                        if ex.score_max is not None:
+                            eval_req_kwargs["score_max"] = ex.score_max
                         evaluation = text.evaluate(
-                            EvalRequest(
-                                exercise_type=ex.type,
-                                section=ex.section,
-                                prompt_text=ex.prompt_text,
-                                student_answer=answer,
-                            ),
+                            EvalRequest(**eval_req_kwargs),
                             settings,
                         )
                         audit.record(

@@ -90,3 +90,30 @@ Opening a lesson navigates to:
 3. **Curator option** exact selector inside the "Кураторы" filter section, and whether "Mister Adilet" is the real curator name for this account.
 
 **Safety:** the whole session was read-only. No exercise was graded, no lesson completed, no score submitted.
+
+## Refactor R1–R9 — resolutions applied to the code (2026-06-16)
+
+- **R0.1 Awaiting discovery — resolved.** Implemented as a per-exercise scan: an
+  exercise (and therefore its lesson) is AWAITING when its `.exercise-estimate-view`
+  shows the clickable "Оценить упражнение" with **no** "N/M" score. `progress.list_lessons`
+  marks a lesson `awaiting` when any of its grade widgets is ungraded; `awaiting_lessons`
+  stays a pure filter. The lessons-tab (`/marathons/marathon/{id}/lessons`) awaiting-count
+  badge remains an optional future optimisation to skip 0-badge lessons.
+- **Identity — resolved.** No id attributes. `student_id` = numeric text in the row
+  (`STUDENT_ID_RE`); `lesson_id` = `/lesson/(\d+)` from the URL after open
+  (`LESSON_URL_RE`); `pupil_id` = `?pupil=` query param; `exercise_id` (idempotency key)
+  = composite `f"{lesson_id}:{number}"` where number is text "1.1". `no_stable_id` now
+  fires only when number/lesson_id can't be parsed.
+- **Score scale — resolved.** `Exercise.score_max` (read from the graded "N/M" widget; the
+  modal max stays best-guess) threads through `EvalRequest.score_max` → the rubric prompt
+  ("score 0-N") → the `Evaluation` clamp `[0, score_max]`. No hardcoded /10 remains
+  (default fallback is 10 only when the live max is unknown).
+- **Audio — confirmed.** `download_audio` = `context.request.get(currentSrc)`; reader uses
+  `audio.currentSrc` (fallback `src`).
+
+### STILL PENDING — needs a live ungraded exercise (R0.2)
+The grade-modal selectors are best guesses, marked `# CONFIRM-LIVE` in `selectors.py`:
+`SCORE_INPUT="input[type=number]"`, `COMMENT_INPUT="textarea"`, `GRADE_SAVE_BTN="text=Продолжить"`,
+plus the real per-exercise max from the modal. The dry-run path never clicks these, so the
+bot is safe to run read-only; a supervised capture on a real awaiting exercise must confirm
+them (open modal, capture, close WITHOUT saving) before any full_auto run.

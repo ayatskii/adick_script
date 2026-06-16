@@ -120,7 +120,7 @@ def _wire(monkeypatch, *, exercises, poster,
         lambda ls: [x for x in ls if x.status == "awaiting"],
     )
     monkeypatch.setattr(runner_mod, "open_lesson", lambda p, le: None)
-    monkeypatch.setattr(runner_mod, "list_exercises", lambda p: exercises)
+    monkeypatch.setattr(runner_mod, "list_exercises", lambda p, lid=None, section="": exercises)
 
     def _dl(ctx, url):
         return download
@@ -382,7 +382,7 @@ def test_selector_error_screenshots_and_continues(monkeypatch):
 
     calls = {"n": 0}
 
-    def _le(p):
+    def _le(p, lid=None, section=""):
         calls["n"] += 1
         if calls["n"] == 1:
             raise SelectorError("boom on first lesson")
@@ -411,7 +411,7 @@ def test_screenshot_failure_is_audited_not_swallowed(monkeypatch):
     # re-point ensure_logged_in after _wire (which overrode it)
     monkeypatch.setattr(runner_mod, "ensure_logged_in", lambda ctx, s: bad_page)
 
-    def _le(p):
+    def _le(p, lid=None, section=""):
         raise SelectorError("boom")
 
     monkeypatch.setattr(runner_mod, "list_exercises", _le)
