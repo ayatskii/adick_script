@@ -43,15 +43,15 @@ def _lesson_number(name: str) -> str:
 
 
 def _row_is_awaiting(row) -> bool:
-    """An exercise (and so a lesson) is AWAITING grading when its
-    .exercise-estimate-view shows a clickable "Оценить упражнение" with NO
-    score yet. A graded one shows "N/M". The progress modal itself does not
-    mark awaiting, so we scan the row's grade widgets."""
-    estimates = row.locator(selectors.GRADE_ESTIMATE_VIEW)
-    for est in estimates.all():
-        if _estimate_is_ungraded(est.inner_text()):
-            return True
-    return False
+    """The progress-modal lesson row exposes NO reliable awaiting marker (Phase 0:
+    the `.status` div is empty and `.exercise-estimate-view` only exists inside the
+    OPENED lesson, not the modal row). So we cannot pre-filter here — treat every
+    lesson as a candidate. The runner opens each one and skips exercises already
+    graded on the platform via ``Exercise.is_graded`` (which uses
+    :func:`_estimate_is_ungraded` against the live lesson view). The lessons-tab
+    awaiting-count badge is a possible future optimisation to skip globally-0
+    lessons and avoid opening every lesson."""
+    return True
 
 
 def _estimate_is_ungraded(estimate_text: str) -> bool:

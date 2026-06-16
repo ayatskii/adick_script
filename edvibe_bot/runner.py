@@ -147,8 +147,27 @@ def run(
 
         for student in students:
             _emit(on_event, {"event": "student", "student_id": student.id})
-            open_progress(page, student)
-            lessons = awaiting_lessons(list_lessons(page))
+            try:
+                open_progress(page, student)
+                lessons = awaiting_lessons(list_lessons(page))
+            except Exception as exc:  # noqa: BLE001 - per-student boundary
+                try:
+                    page.screenshot(
+                        path=f"reports/error-{run_id}-{student.id}-discovery.png"
+                    )
+                except Exception as shot_err:  # noqa: BLE001
+                    log.error("screenshot failed: %s", shot_err)
+                    audit.record(
+                        run_id, "screenshot_failed",
+                        {"student_id": student.id}, {"error": str(shot_err)},
+                    )
+                errors += 1
+                audit.record(
+                    run_id, "student_error",
+                    {"student_id": student.id}, {"error": str(exc)},
+                )
+                _emit(on_event, {"event": "student_error", "student_id": student.id})
+                continue
             if config.max_lessons is not None:
                 lessons = lessons[: config.max_lessons]
 

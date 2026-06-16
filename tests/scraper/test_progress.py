@@ -90,24 +90,20 @@ def test_open_progress_clicks_progress_button():
     assert btn.click_count == 1
 
 
-def test_list_lessons_reads_name_number_and_status():
-    # Awaiting: a grade widget offering "Оценить упражнение" with no score.
-    awaiting_row = FakeLocator(
-        text="Lesson 14: Entertainment",
-        estimates=["Оценить упражнение"],
-    )
-    # Complete: every grade widget shows a score "N/M".
-    complete_row = FakeLocator(
-        text="Lesson 13: Travel",
-        estimates=["Оценить упражнение: 5/5"],
-    )
-    rows = FakeLocator(children=[awaiting_row, complete_row])
+def test_list_lessons_reads_all_lessons_as_awaiting_candidates():
+    # The progress modal exposes no reliable per-lesson awaiting marker, so every
+    # lesson is returned as an "awaiting" candidate; the runner opens each and
+    # skips exercises already graded on the platform (Exercise.is_graded).
+    rows = FakeLocator(children=[
+        FakeLocator(text="Lesson 14: Entertainment"),
+        FakeLocator(text="Lesson 13: Travel"),
+    ])
     page = FakePage(locators={selectors.LESSON_ROW: rows})
 
     lessons = list_lessons(page)
     assert lessons == [
         Lesson(id="14", name="Lesson 14: Entertainment", status="awaiting", number="14"),
-        Lesson(id="13", name="Lesson 13: Travel", status="complete", number="13"),
+        Lesson(id="13", name="Lesson 13: Travel", status="awaiting", number="13"),
     ]
 
 
