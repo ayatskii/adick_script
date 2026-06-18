@@ -152,3 +152,28 @@ The composite idempotency key includes the section index: `f"{lesson_id}:s{n}:{n
 
 **Safety:** entire capture was read-only — modal opened then Escaped, no score posted,
 no lesson completed.
+
+### R0.3 — Answer extraction, per-exercise max, graded-state timing (2026-06-18)
+
+Found while validating a real (since-removed) test grade. Three corrections:
+
+- **Student answer ≠ block instructions.** `block.inner_text()` is the TASK PROMPT.
+  The student's WRITTEN answer lives in a `contenteditable.html-editor-inline`
+  (`selectors.ANSWER_EDITOR`). Confirmed live: Akerke L15 #1.3 editor holds her
+  rewritten sentences; Nurdana L18 #1.2 editor is empty (she never did it). The bot
+  had been grading the instructions, which (a) produced garbage evaluations and
+  (b) hid empty submissions from the empty-answer guard → it graded blank work.
+  Fix: `lesson._read_written_answer` reads the editor; empty → None → flagged.
+  Audio answers are unchanged (`audio_url`).
+- **score_max is PER-EXERCISE.** Nurdana L18 #1.2 is /6; the audio exercise modal
+  was /5. The only authoritative source is the grade modal text "Максимальное
+  количество баллов: N". Fix: the grade flow now opens the modal FIRST, reads the
+  max (`poster.parse_modal_max`), evaluates against it, then submits.
+- **`.exercise-estimate-view` render lag.** When walking sections quickly, a graded
+  exercise can momentarily report ungraded (its estimate-view has not rendered).
+  Fix: `goto_section` waits for networkidle + a settle, and `runner` re-checks
+  `poster.is_already_graded` on the settled section before grading (defense in depth).
+
+**Still unverified live:** an end-to-end real grade submission with the corrected
+flow (answer from editor + per-exercise max). The earlier one-off submit proved the
+modal mechanics; the corrected pipeline has not yet posted a real grade.

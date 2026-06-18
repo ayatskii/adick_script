@@ -77,12 +77,31 @@ class FakePage:
 
 
 class RecordingPoster:
-    def __init__(self):
+    """Models the split grade flow: open_grade_modal (read max) → submit_grade /
+    cancel_grade_modal. Pairs submit with the last-opened exercise so grade_calls
+    still records (element_id, score, dry_run)."""
+
+    def __init__(self, *, already_graded=None, modal_max=None):
         self.grade_calls = []       # (element_id, score, dry_run)
         self.complete_calls = []    # dry_run
+        self.cancel_calls = []      # element_id
+        self._already = set(already_graded or [])
+        self._modal_max = modal_max or {}   # element_id -> max
+        self._last_ex = None
 
-    def grade_exercise(self, page, exercise, evaluation, settings, dry_run):
-        self.grade_calls.append((exercise.element_id, evaluation.score, dry_run))
+    def is_already_graded(self, page, exercise):
+        return exercise.element_id in self._already
+
+    def open_grade_modal(self, page, exercise):
+        self._last_ex = exercise
+        return self._modal_max.get(exercise.element_id)
+
+    def submit_grade(self, page, evaluation, settings):
+        # dry_run never opens the modal, so every submit is a real post.
+        self.grade_calls.append((self._last_ex.element_id, evaluation.score, False))
+
+    def cancel_grade_modal(self, page):
+        self.cancel_calls.append(self._last_ex.element_id if self._last_ex else None)
 
     def complete_lesson(self, page, dry_run):
         self.complete_calls.append(dry_run)
@@ -138,7 +157,10 @@ def _wire(monkeypatch, *, exercises, poster,
 
     monkeypatch.setattr(runner_mod.text, "evaluate", lambda req, s: evaluation)
 
-    monkeypatch.setattr(runner_mod.poster, "grade_exercise", poster.grade_exercise)
+    monkeypatch.setattr(runner_mod.poster, "is_already_graded", poster.is_already_graded)
+    monkeypatch.setattr(runner_mod.poster, "open_grade_modal", poster.open_grade_modal)
+    monkeypatch.setattr(runner_mod.poster, "submit_grade", poster.submit_grade)
+    monkeypatch.setattr(runner_mod.poster, "cancel_grade_modal", poster.cancel_grade_modal)
     monkeypatch.setattr(runner_mod.poster, "complete_lesson", poster.complete_lesson)
 
     # silence the real browser launch
@@ -208,6 +230,25 @@ def test_full_auto_grades_and_completes(monkeypatch):
     actions = [r[1] for r in store.audit_rows]
     assert "evaluate" in actions and "grade" in actions
     assert "complete_lesson" in actions
+
+
+def test_already_graded_on_platform_is_skipped_not_regraded(monkeypatch):
+    # Defense-in-depth for the estimate-view render lag: if the exercise turns out
+    # already graded when we reach its section, skip it — never re-grade.
+    store = FakeStore()
+    poster = RecordingPoster(already_graded={"ex-1"})
+    _wire(monkeypatch, exercises=[_text_exercise()], poster=poster)
+    report = run(RunConfig(mode="full_auto"), _settings(), store)
+    assert poster.grade_calls == []            # never submitted
+    assert report.graded == 0
+    assert report.skipped == 1
+    assert report.completed_lessons == 0       # nothing graded → no completion
+    assert any(
+        e.exercise_id == "ex-1" and e.status == LedgerStatus.SKIPPED.value
+        for e in store.recorded
+    )
+    skip_audits = [r for r in store.audit_rows if r[1] == "skip"]
+    assert skip_audits and any("already_graded" in str(r[3]) for r in skip_audits)
 
 
 def test_dry_run_submits_nothing(monkeypatch):

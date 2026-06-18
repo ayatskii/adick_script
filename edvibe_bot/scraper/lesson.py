@@ -136,8 +136,16 @@ def goto_section(page: Page, base_lesson_url: str, index: int) -> None:
         wait_lesson_ready(page)
         items = page.locator(selectors.SECTION_ITEM)
     items.nth(index).click()
-    page.wait_for_timeout(3000)   # in-app section content render settle
+    page.wait_for_timeout(1500)
+    # Grade widgets (.exercise-estimate-view) load via a separate request after the
+    # section content; wait for the network to settle, then a final beat, so the
+    # already-graded check sees them instead of racing the render.
+    try:
+        page.wait_for_load_state("networkidle", timeout=8000)
+    except Exception:  # noqa: BLE001 - SPA may not reach a strict networkidle
+        pass
     wait_lesson_ready(page)
+    page.wait_for_timeout(1500)
 
 
 def gather_exercises(

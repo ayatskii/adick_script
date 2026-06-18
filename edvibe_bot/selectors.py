@@ -76,6 +76,10 @@ SCORE_INPUT_REL = "input[type=number]"
 COMMENT_TOGGLE_REL = ".exercise-estimate-form .tir-toggle"
 COMMENT_INPUT_REL = "textarea"
 GRADE_SAVE_BTN_REL = "button.blue:has-text('Продолжить')"
+GRADE_CANCEL_BTN_REL = "button.gray:has-text('Отмена')"
+# The modal states the real per-exercise maximum, e.g. "Максимальное количество
+# баллов: 6". This is the authoritative score_max (it varies per exercise).
+MODAL_MAX_LABEL = "Максимальное количество баллов"
 
 # URL / text patterns (identity source — replaces the dropped *_ID_ATTR).
 LESSON_URL_RE = re.compile(r"/marathon/\d+/lesson/(\d+)")   # group(1) = lessonId

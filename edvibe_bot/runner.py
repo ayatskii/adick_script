@@ -325,15 +325,54 @@ def run(
                             )
                             continue
 
-                        # ---- evaluate ----
+                        # ---- navigate to the section, re-check grade state, and
+                        # open the modal to read the TRUE per-exercise max ----
+                        # score_max is per-exercise (e.g. /5, /6) and only stated
+                        # inside the modal. dry_run never touches the platform, so
+                        # it keeps the discovery guess.
+                        real_max = ex.score_max
+                        modal_open = False
+                        if not dry_run:
+                            goto_section(page, base_lesson_url, ex.section_index)
+                            # Defensive: discovery's estimate-view read can lag the
+                            # render; re-check on the settled section before grading
+                            # so we never re-grade already-graded work.
+                            if poster.is_already_graded(page, ex):
+                                store.record_exercise(
+                                    _entry(
+                                        student=student,
+                                        lesson=lesson,
+                                        exercise_id=exercise_id,
+                                        ex=ex,
+                                        run_id=run_id,
+                                        status=LedgerStatus.SKIPPED.value,
+                                        comment="already_graded",
+                                        submitted=False,
+                                        dry_run=dry_run,
+                                    )
+                                )
+                                skipped += 1
+                                audit.record(
+                                    run_id,
+                                    "skip",
+                                    ex_target,
+                                    {"reason": "already_graded"},
+                                )
+                                continue
+                            modal_max = poster.open_grade_modal(page, ex)
+                            modal_open = True
+                            if modal_max:
+                                real_max = modal_max
+
+                        # ---- evaluate (against the true max when known) ----
                         eval_req_kwargs = {
                             "exercise_type": ex.type,
                             "section": ex.section,
                             "prompt_text": ex.prompt_text,
                             "student_answer": answer,
                         }
-                        if ex.score_max is not None:
-                            eval_req_kwargs["score_max"] = ex.score_max
+                        if real_max is not None:
+                            eval_req_kwargs["score_max"] = real_max
                         evaluation = text.evaluate(
                             EvalRequest(**eval_req_kwargs),
                             settings,
@@ -355,6 +394,8 @@ def run(
                             evaluation.rationale == "parse_failed"
                             or evaluation.confidence <= 0
                         ):
+                            if modal_open:
+                                poster.cancel_grade_modal(page)
                             store.record_exercise(
                                 _entry(
                                     student=student,
@@ -381,6 +422,8 @@ def run(
                         if (not submit_allowed) or (
                             evaluation.confidence < config.confidence_threshold
                         ):
+                            if modal_open:
+                                poster.cancel_grade_modal(page)
                             low_conf = (
                                 evaluation.confidence < config.confidence_threshold
                             )
@@ -437,14 +480,10 @@ def run(
                                 dry_run=dry_run,
                             )
                         )
-                        # The grade modal is opened from the exercise's own
-                        # section page; navigate there before clicking (no-op in
-                        # dry_run, which never touches the platform).
-                        if not dry_run:
-                            goto_section(page, base_lesson_url, ex.section_index)
-                        poster.grade_exercise(
-                            page, ex, evaluation, settings, dry_run=dry_run
-                        )
+                        # Submit into the modal opened above (already on the right
+                        # section). dry_run never opened it → nothing is posted.
+                        if modal_open:
+                            poster.submit_grade(page, evaluation, settings)
                         store.record_exercise(
                             _entry(
                                 student=student,
