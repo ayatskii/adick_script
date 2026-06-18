@@ -41,6 +41,11 @@ LESSON_LOADING_TEXT = "Загрузка марафона"     # present while th
 SECTION_ITEM = ".sections-list_item"          # left-rail section switcher rows
 EXERCISE_BLOCK = ".exercise-wrapper"
 EXERCISE_AUDIO = "audio"                      # read .currentSrc
+# The student's WRITTEN answer lives in this contenteditable rich-text editor —
+# NOT in the block's innerText (which is the task instructions). Confirmed live:
+# completed writing exercise → editor holds the rewritten sentences; an unanswered
+# exercise → editor is empty (so we must flag empty, never grade the instructions).
+ANSWER_EDITOR = ".html-editor-inline"
 COMPLETE_LESSON_BTN = "text=Завершить урок"   # a .sections-list_item div, NOT a <button>
 # section switch: CLICK the nth SECTION_ITEM (0-indexed). The ?section=n URL param
 # does NOT work — the SPA canonicalises it back to section 0.

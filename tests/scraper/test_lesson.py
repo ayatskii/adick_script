@@ -105,19 +105,26 @@ class FakePage:
         return FakeLocator(children=[])
 
 
-def _block(*, text, audio_src=None, grade_button=False, graded_score=None):
+def _block(*, text, audio_src=None, grade_button=False, graded_score=None, answer=None):
     """Models the confirmed live DOM:
     - grade_button=True  → an ungraded manual exercise exposing the
       "Оценить упражнение" trigger (selectors.GRADE_EXERCISE_BTN).
     - graded_score="N/M" → an already-graded exercise whose
       .exercise-estimate-view shows the awarded score.
-    - neither             → an auto-checked exercise."""
+    - neither             → an auto-checked exercise.
+    - answer="..."        → the student's WRITTEN answer inside the
+      ``.html-editor-inline`` contenteditable. None → editor absent;
+      "" → editor present but empty (unanswered)."""
+    editor_children = []
+    if answer is not None:
+        editor_children = [FakeLocator(text=answer)]
     nested = {
         selectors.EXERCISE_AUDIO: FakeLocator(
             children=[FakeLocator(attrs={"currentSrc": audio_src})]
             if audio_src
             else []
         ),
+        selectors.ANSWER_EDITOR: FakeLocator(children=editor_children),
         selectors.GRADE_ESTIMATE_VIEW: (
             FakeLocator(children=[FakeLocator(text=f"Оценить упражнение: {graded_score}")])
             if graded_score is not None
@@ -154,17 +161,48 @@ def test_list_exercises_builds_audio_exercise_with_composite_id():
 
 
 def test_list_exercises_builds_text_exercise():
+    # The block text is the INSTRUCTIONS; the answer is in the editor.
     block = _block(
-        text="2 Write about your hobby. I like reading.",
+        text="2 Write about your hobby.",
         audio_src=None,
         grade_button=True,
+        answer="I like reading books in the evening.",
     )
     page = FakePage(blocks=[block])
     ex = list_exercises(page, lesson_id="L", section="Writing")[0]
     assert ex.type is ExerciseType.TEXT
-    assert "I like reading." in ex.answer_text
+    assert ex.answer_text == "I like reading books in the evening."
     assert ex.audio_url is None
     assert ex.element_id == "L:s0:2"
+
+
+def test_list_exercises_answer_is_editor_not_instructions():
+    # Regression: the bot once graded the instructions as the answer. The
+    # answer must come from the editor, and the instructions must NOT leak in.
+    block = _block(
+        text="3 Rewrite the sentences using used to or would.",
+        grade_button=True,
+        answer="My uncle used to be an artist.",
+    )
+    page = FakePage(blocks=[block])
+    ex = list_exercises(page, lesson_id="L", section="Grammar")[0]
+    assert ex.answer_text == "My uncle used to be an artist."
+    assert "Rewrite the sentences" not in (ex.answer_text or "")
+
+
+def test_list_exercises_blank_writing_exercise_has_no_answer():
+    # Editor present but EMPTY → unanswered. answer_text must be None so the
+    # runner flags empty_answer instead of grading the instructions.
+    block = _block(
+        text="4 Write three sentences about your weekend.",
+        grade_button=True,
+        answer="",
+    )
+    page = FakePage(blocks=[block])
+    ex = list_exercises(page, lesson_id="L", section="Writing")[0]
+    assert ex.answer_text is None
+    assert ex.has_grade_button is True   # still a manual target → runner flags empty
+    assert ex.type is ExerciseType.MANUAL_UNKNOWN
 
 
 def test_list_exercises_already_graded_is_skipped_by_flags():

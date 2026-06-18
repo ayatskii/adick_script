@@ -60,6 +60,21 @@ def parse_number(block_text: str) -> str:
     return match.group(0) if match else ""
 
 
+def _read_written_answer(block) -> str | None:
+    """Read the student's WRITTEN answer from the contenteditable answer editor.
+
+    The block's innerText is the task INSTRUCTIONS, not the answer — grading that
+    is how the bot graded blank work. The real answer lives in
+    ``selectors.ANSWER_EDITOR``. Returns None when the editor is absent or empty
+    (an unanswered exercise), so the runner's empty-answer guard flags it instead
+    of grading the instructions.
+    """
+    editor = block.locator(selectors.ANSWER_EDITOR)
+    parts = [(node.inner_text() or "").strip() for node in editor.all()]
+    answer = "\n".join(part for part in parts if part).strip()
+    return answer or None
+
+
 def _audio_src(audio_loc) -> str | None:
     """Read the audio element's currentSrc (direct media-a.edvibe.com MP3),
     falling back to src. None when there is no audio answer."""
@@ -186,10 +201,10 @@ def list_exercises(
         if has_grade_button and score_max is None:
             score_max = selectors.SCORE_MAX
 
-        # Text answers: for a non-audio manual exercise the student's written
-        # response is the block text. AUDIO answers come from the transcript,
-        # so answer_text stays None there.
-        answer_text = None if has_audio else (block_text or None)
+        # Text answers: read the student's WRITTEN response from the answer editor
+        # (NOT the block instructions). AUDIO answers come from the transcript, so
+        # answer_text stays None there. An empty editor → None → empty-answer flag.
+        answer_text = None if has_audio else _read_written_answer(block)
         has_text_answer = answer_text is not None
 
         ex_type = classify_exercise(has_grade_button, has_audio, has_text_answer)
