@@ -39,6 +39,7 @@ _MANUAL_TYPES = {
 class RunConfig:
     mode: str
     student_filter: "list[str] | None" = None
+    student_offset: int = 0            # skip the first N students (for batched runs)
     max_students: "int | None" = None
     max_lessons: "int | None" = None
     headed: bool = False
@@ -147,6 +148,11 @@ def run(
         if config.student_filter is not None:
             wanted = set(config.student_filter)
             students = [s for s in students if s.id in wanted]
+        # Batched full-roster runs: process students[offset : offset+max]. Combined
+        # with the store's resumability (already-graded work is skipped on re-runs),
+        # this makes the ~209-student roster tractable in chunks across invocations.
+        if config.student_offset:
+            students = students[config.student_offset :]
         if config.max_students is not None:
             students = students[: config.max_students]
 

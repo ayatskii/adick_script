@@ -57,6 +57,17 @@ def build_run_config(argv: list[str], default_confidence: float = 0.6) -> RunCon
         help="Cap the number of students processed (blast-radius limit).",
     )
     parser.add_argument(
+        "--student-offset",
+        type=int,
+        default=0,
+        metavar="N",
+        help=(
+            "Skip the first N students. With --max-students, processes the roster "
+            "in batches (e.g. offset 0/25/50 ... with --max-students 25) across "
+            "resumable runs — the practical way to cover all ~209 students."
+        ),
+    )
+    parser.add_argument(
         "--max-lessons",
         type=int,
         default=None,
@@ -90,6 +101,7 @@ def build_run_config(argv: list[str], default_confidence: float = 0.6) -> RunCon
     return RunConfig(
         mode=args.mode,
         student_filter=args.student,
+        student_offset=args.student_offset,
         max_students=args.max_students,
         max_lessons=args.max_lessons,
         headed=args.headed,

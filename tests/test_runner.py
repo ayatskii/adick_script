@@ -497,3 +497,20 @@ def test_student_filter_restricts(monkeypatch):
     run(cfg, _settings(), store)
     evals = [r for r in store.audit_rows if r[1] == "evaluate"]
     assert len(evals) == 1
+
+
+def test_student_offset_batches_the_roster(monkeypatch):
+    store = FakeStore()
+    poster = RecordingPoster()
+    students = [Student(id=f"s{i}", name=str(i)) for i in (1, 2, 3)]
+    _wire(
+        monkeypatch, exercises=[_text_exercise()], poster=poster, students=students,
+    )
+    seen: list[str] = []
+    cfg = RunConfig(mode="dry_run", student_offset=1, max_students=1)
+    run(
+        cfg, _settings(), store,
+        on_event=lambda e: seen.append(e["student_id"])
+        if e.get("event") == "student" else None,
+    )
+    assert seen == ["s2"]   # offset 1 skips s1; max_students 1 → only s2

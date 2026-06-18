@@ -62,6 +62,12 @@ def test_headed_flag_sets_true():
     assert cfg.headed is True
 
 
+def test_student_offset_defaults_zero_and_parses():
+    assert build_run_config(["--mode", "dry_run"]).student_offset == 0
+    cfg = build_run_config(["--mode", "dry_run", "--student-offset", "50"])
+    assert cfg.student_offset == 50
+
+
 def test_confidence_omitted_uses_passed_default():
     cfg = build_run_config(["--mode", "dry_run"], default_confidence=0.42)
     assert cfg.confidence_threshold == 0.42
