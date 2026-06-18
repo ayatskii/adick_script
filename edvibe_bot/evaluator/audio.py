@@ -67,14 +67,36 @@ def _make_client(settings: "Settings"):
     return OpenAI(api_key=settings.openai_api_key)
 
 
+def _sniff_extension(audio_bytes: bytes) -> str:
+    """PURE: infer the audio container extension from magic bytes.
+
+    The OpenAI SDK derives the format from the filename extension, and
+    gpt-4o-transcribe is STRICT — a wrong extension (e.g. .ogg for MP3 data) is
+    rejected as "corrupted or unsupported". edvibe serves MP3, so mp3 is the
+    default; we still sniff so other containers transcribe correctly.
+    """
+    head = audio_bytes[:12]
+    if head[:3] == b"ID3" or head[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+        return "mp3"
+    if head[:4] == b"OggS":
+        return "ogg"
+    if head[:4] == b"RIFF" and head[8:12] == b"WAVE":
+        return "wav"
+    if head[:4] == b"\x1aE\xdf\xa3":
+        return "webm"
+    if head[4:8] == b"ftyp":
+        return "m4a"
+    return "mp3"  # edvibe default
+
+
 def _audio_file(audio_bytes: bytes) -> io.BytesIO:
     """Wrap raw bytes in an in-memory file-like with a .name.
 
-    The OpenAI SDK uses the filename extension to infer the audio format,
-    so the BytesIO MUST carry a .name attribute.
+    The OpenAI SDK uses the filename extension to infer the audio format, so the
+    BytesIO MUST carry a .name with the CORRECT extension for the actual bytes.
     """
     buf = io.BytesIO(audio_bytes)
-    buf.name = "audio.ogg"
+    buf.name = f"audio.{_sniff_extension(audio_bytes)}"
     return buf
 
 

@@ -4,7 +4,7 @@ import io
 import pytest
 
 import edvibe_bot.evaluator.audio as audio_mod
-from edvibe_bot.evaluator.audio import download_audio, transcribe
+from edvibe_bot.evaluator.audio import download_audio, transcribe, _sniff_extension
 
 
 # ---- fakes for the Playwright request context -------------------------------
@@ -121,14 +121,25 @@ def _patch_client(monkeypatch, recorder):
     monkeypatch.setattr(audio_mod.time, "sleep", lambda *_a, **_k: None)
 
 
+def test_sniff_extension_detects_real_formats():
+    assert _sniff_extension(b"ID3\x04\x00\x00") == "mp3"     # edvibe recordings
+    assert _sniff_extension(b"\xff\xfb\x90\x00") == "mp3"     # MPEG frame sync
+    assert _sniff_extension(b"OggS\x00\x02\x00") == "ogg"
+    assert _sniff_extension(b"RIFF\x00\x00\x00\x00WAVEfmt ") == "wav"
+    assert _sniff_extension(b"\x1aE\xdf\xa3stuff") == "webm"
+    assert _sniff_extension(b"\x00\x00\x00\x20ftypM4A ") == "m4a"
+    assert _sniff_extension(b"unrecognized bytes") == "mp3"   # default to edvibe's mp3
+
+
 def test_transcribe_returns_text_on_first_success(monkeypatch):
     rec = _Recorder([("return", "hello world")])
     _patch_client(monkeypatch, rec)
-    out = transcribe(b"OGGDATA", _FakeSettings())
+    out = transcribe(b"ID3\x04 mp3 body bytes", _FakeSettings())
     assert out == "hello world"
     assert rec.models == ["gpt-4o-transcribe"]
-    # bytes became an in-memory file-like that carries a usable filename
-    assert rec.filenames[0] and rec.filenames[0].endswith(".ogg")
+    # MP3 bytes → upload filename carries the MATCHING extension, so the strict
+    # primary model (gpt-4o-transcribe) accepts it instead of rejecting .ogg.
+    assert rec.filenames[0] == "audio.mp3"
 
 
 def test_transcribe_unwraps_object_with_text_attr(monkeypatch):
