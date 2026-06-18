@@ -114,8 +114,10 @@ def open_lesson(page: Page, lesson: Lesson) -> None:
     /marathon/{m}/lesson/{lessonId}?pupil={pupilId}. Parse the lessonId and
     pupilId from the URL — these are the stable ids used for the per-exercise
     composite key."""
+    # Match "Lesson N:" (with the colon) so "Lesson 1" doesn't also match
+    # "Lesson 10".."Lesson 19"; fall back to the full name when no number.
     row = page.locator(selectors.LESSON_ROW).filter(
-        has_text=f"Lesson {lesson.number}" if lesson.number else lesson.name
+        has_text=f"Lesson {lesson.number}:" if lesson.number else lesson.name
     )
     row.locator(selectors.LESSON_OPEN_BUTTON).first.click()
     # The lesson opens via an async SPA transition; the URL only becomes

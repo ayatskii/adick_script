@@ -43,6 +43,18 @@ class FakePage:
     def wait_for_load_state(self, state="load", **kwargs):
         self.waited = True
 
+    def locator(self, selector):
+        page = self
+
+        class _Loc:
+            def wait_for(self, state=None, timeout=None):
+                page.waited = True
+
+        return _Loc()
+
+    def wait_for_url(self, predicate, timeout=None):
+        self.url = self._land_url
+
 
 class FakeContext:
     def __init__(self, page: FakePage):

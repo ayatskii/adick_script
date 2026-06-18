@@ -200,6 +200,10 @@ def run(
                     continue
 
                 try:
+                    # Re-open the student's progress modal before each lesson:
+                    # opening a lesson navigates AWAY from the modal, so the next
+                    # lesson's row is otherwise unreachable.
+                    open_progress(page, student, roster_url)
                     open_lesson(page, lesson)
                     base_lesson_url = page.url
                     # lesson_id derived from the lesson URL after navigation
@@ -535,7 +539,7 @@ def run(
                         )
                         _emit(on_event, {"event": "lesson_complete", **target})
 
-                except Exception:  # noqa: BLE001 - per-lesson boundary (covers SelectorError)
+                except Exception as lesson_exc:  # noqa: BLE001 - per-lesson boundary (covers SelectorError)
                     try:
                         page.screenshot(
                             path=f"reports/error-{run_id}-{student.id}-{lesson.id}.png"
@@ -567,7 +571,9 @@ def run(
                         )
                     )
                     errors += 1
-                    audit.record(run_id, "lesson_error", target, {})
+                    audit.record(
+                        run_id, "lesson_error", target, {"error": str(lesson_exc)}
+                    )
                     continue
 
     counts = {

@@ -16,12 +16,18 @@ from edvibe_bot.config import Settings
 
 
 def login(page: Page, settings: Settings) -> None:
-    """Perform a fresh username/password login on edvibe.com."""
+    """Perform a fresh username/password login on edvibe.com.
+
+    The login page is a Vue SPA: ``goto`` resolves before the form renders, so we
+    wait for networkidle AND the email input to be visible before filling (a bare
+    fill races the render and times out), then wait until the URL leaves /login."""
     page.goto(selectors.LOGIN_URL)
+    page.wait_for_load_state("networkidle")
+    page.locator(selectors.LOGIN_EMAIL).wait_for(state="visible", timeout=30000)
     page.fill(selectors.LOGIN_EMAIL, settings.edvibe_login)
     page.fill(selectors.LOGIN_PASSWORD, settings.edvibe_password)
     page.click(selectors.LOGIN_SUBMIT)
-    page.wait_for_load_state("networkidle")
+    page.wait_for_url(lambda url: "/login" not in url, timeout=20000)
 
 
 def is_session_valid(page: Page) -> bool:

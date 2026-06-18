@@ -15,8 +15,9 @@ def test_health_ok(client):
 
 
 def test_health_phase0_reflects_selectors():
-    # selectors.py currently still contains "# CONFIRM" markers (pre-Phase 0),
-    # so phase0_done must be False.
+    # Phase 0 is complete: every "# CONFIRM-LIVE" marker has been removed from
+    # selectors.py after the grade-modal/answer/max selectors were confirmed live,
+    # so phase0_done must now be True.
     from backend.app import phase0_done
 
-    assert phase0_done() is False
+    assert phase0_done() is True
