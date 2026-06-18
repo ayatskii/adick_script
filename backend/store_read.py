@@ -224,10 +224,21 @@ class StoreReader:
         return out
 
     def queue_items(self) -> list[dict]:
-        """Items awaiting human review -> ReviewItem shape. v1 sources these
-        from flagged ledger rows (status='flagged')."""
+        """Items awaiting human review -> ReviewItem shape. Sourced from the real
+        ledger: every FLAGGED row (needs attention) plus every un-submitted
+        PROPOSAL (a SKIPPED row carrying a proposed score — dry_run and review
+        record evaluations as skipped). Lesson-sentinel rows are excluded."""
         out: list[dict] = []
-        for r in self.ledger_by_status(LedgerStatus.FLAGGED.value):
+        for r in self.ledger_by_status(
+            LedgerStatus.FLAGGED.value, LedgerStatus.SKIPPED.value
+        ):
+            if r.get("exercise_id") == LESSON_SENTINEL:
+                continue
+            is_flagged = r.get("status") == LedgerStatus.FLAGGED.value
+            has_proposal = r.get("proposed_score") is not None
+            # skipped rows are only reviewable when they're a real proposal.
+            if not is_flagged and not has_proposal:
+                continue
             ex_type = "audio" if (r.get("type") == "audio") else "text"
             out.append(
                 {
@@ -240,9 +251,11 @@ class StoreReader:
                     "score": r.get("proposed_score") or 0,
                     "conf": r.get("confidence") or 0.0,
                     "transcript": "",
-                    "comment": r.get("proposed_comment") or "",
+                    "comment": r.get("proposed_comment")
+                    or ("Flagged for review" if is_flagged else ""),
                     "status": "pending",
                     "edited": False,
+                    "flagged": bool(is_flagged and not has_proposal),
                 }
             )
         return out

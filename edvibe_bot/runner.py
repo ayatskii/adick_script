@@ -304,9 +304,7 @@ def run(
                         except Exception:  # noqa: BLE001 - fail-safe to FLAG
                             fail_reason = "gather_failed"
 
-                        if fail_reason is None and (
-                            answer is None or not answer.strip()
-                        ):
+                        if fail_reason is None and text.is_blank_answer(answer):
                             fail_reason = "empty_answer"
 
                         if fail_reason is not None:

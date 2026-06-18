@@ -4,8 +4,28 @@ import types
 import pytest
 
 import edvibe_bot.evaluator.text as text_mod
+from edvibe_bot.evaluator.text import is_blank_answer
 from edvibe_bot.config import Settings
 from edvibe_bot.evaluator.schema import EvalRequest, Evaluation, ExerciseType
+
+
+# ---- PURE: is_blank_answer (empty/silent detection) ----
+
+def test_is_blank_answer_true_for_empty_and_silence():
+    assert is_blank_answer(None) is True
+    assert is_blank_answer("") is True
+    assert is_blank_answer("   ") is True
+    assert is_blank_answer("...") is True
+    assert is_blank_answer("you") is True          # whisper silence hallucination
+    assert is_blank_answer("Thank you.") is True
+    assert is_blank_answer("Okay") is True
+    assert is_blank_answer("word") is True          # single token, not gradeable
+
+
+def test_is_blank_answer_false_for_real_answers():
+    assert is_blank_answer("Yes, I do think so.") is False
+    assert is_blank_answer("My uncle used to be an artist.") is False
+    assert is_blank_answer("Когда я был молод, я часто читал.") is False  # cyrillic
 
 
 def _settings() -> Settings:

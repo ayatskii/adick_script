@@ -96,9 +96,15 @@ def test_flagged_and_queue_views(populated_db):
     assert flagged[0]["student"] == "Анель"
     assert flagged[0]["ex"] == "2.1"
 
+    # The review queue surfaces the flagged row AND the skipped PROPOSAL (it
+    # carries a proposed score), so a reviewer sees everything awaiting a decision.
     queue = reader.queue_items()
-    assert len(queue) == 1
-    assert queue[0]["type"] == "text"
+    assert len(queue) == 2
+    by_ex = {q["ex"]: q for q in queue}
+    assert set(by_ex) == {"2.1", "1.1"}
+    assert by_ex["1.1"]["score"] == 8           # skipped proposal surfaces its score
+    assert all(q["status"] == "pending" for q in queue)
+    assert all(q["type"] == "text" for q in queue)
 
 
 def test_audit_and_reconcile(populated_db):

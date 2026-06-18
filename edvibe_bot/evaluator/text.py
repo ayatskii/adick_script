@@ -1,4 +1,5 @@
 import json
+import re
 import time
 
 import openai
@@ -8,6 +9,27 @@ from edvibe_bot.evaluator.prompts import build_messages
 from edvibe_bot.evaluator.schema import EvalRequest, Evaluation
 
 logger = get_logger(__name__)
+
+# Word tokens = runs of >=2 letters (unicode; covers Latin + Cyrillic).
+_WORD_RE = re.compile(r"[^\W\d_]{2,}", re.UNICODE)
+# Whisper's well-known outputs for silence/near-silence — these are NOT answers.
+_SILENCE_HALLUCINATIONS = {
+    "you", "thank you", "thanks", "thanks for watching", "thank you for watching",
+    "bye", "okay", "ok", "hmm", "mm", "uh", "um", "the", "yeah",
+}
+
+
+def is_blank_answer(text: "str | None") -> bool:
+    """PURE: True when a student answer (typed text or audio transcript) carries
+    no gradeable content — empty/whitespace/punctuation-only, a single word, or a
+    known Whisper silence hallucination. Such answers must be FLAGGED for review,
+    never scored (a silent recording was scoring 0 instead of flagging)."""
+    if not text or not text.strip():
+        return True
+    normalized = " ".join(text.lower().split()).strip(" .,!?-…")
+    if normalized in _SILENCE_HALLUCINATIONS:
+        return True
+    return len(_WORD_RE.findall(text)) < 2
 
 _MAX_ATTEMPTS = 3
 _BASE_BACKOFF_SECONDS = 1.0
