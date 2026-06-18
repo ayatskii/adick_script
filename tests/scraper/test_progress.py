@@ -65,7 +65,13 @@ class FakeLocator:
     def count(self):
         return len(self._children)
 
-    def click(self):
+    def fill(self, value):
+        pass
+
+    def wait_for(self, state=None, timeout=None):
+        pass
+
+    def click(self, **kwargs):
         self.click_count += 1
 
 
@@ -86,12 +92,26 @@ class FakePage:
         # The fake URL is already the post-navigation lesson URL.
         return None
 
+    def wait_for_timeout(self, ms):
+        return None
 
-def test_open_progress_clicks_progress_button():
+    def goto(self, url):
+        self.url = url
+
+    def wait_for_load_state(self, state=None):
+        return None
+
+
+def test_open_progress_searches_then_clicks_progress_button():
     btn = FakeLocator()
     page = FakePage(locators={selectors.STUDENT_PROGRESS_BTN: btn})
-    open_progress(page, Student(id="s1", name="Анель"))
+    open_progress(
+        page,
+        Student(id="s1", name="Анель", email="anel@mail.ru"),
+        "https://edvibe.com/cabinet/school/marathons/marathon/110326/students",
+    )
     assert btn.click_count == 1
+    assert page.url.endswith("/students")   # reset to a clean roster first
 
 
 def test_list_lessons_reads_all_lessons_as_awaiting_candidates():

@@ -13,6 +13,13 @@ from edvibe_bot.errors import SelectorError
 class Student:
     id: str
     name: str
+    email: str = ""     # unique → used to target the right student in open_progress
+
+
+# Virtualised-roster scroll-collect tuning.
+_MAX_SCROLLS = 200
+_SCROLL_STABLE_PASSES = 6
+_SCROLL_WAIT_MS = 800
 
 
 def _wait_click(page: Page, selector: str, timeout: int = 30000) -> None:
@@ -47,30 +54,67 @@ def open_marathon(page: Page, settings: Settings) -> None:
         pass  # curator filter unavailable/unconfirmed -> process all students
 
 
+def _parse_student_row(text: str) -> "Student | None":
+    """PURE: build a Student from one row's text, or None when the row carries no
+    numeric id (a stray node in the virtualised list — skip rather than fail)."""
+    match = selectors.STUDENT_ID_RE.search(text)
+    if not match:
+        return None
+    student_id = match.group(0)
+    email_match = selectors.STUDENT_EMAIL_RE.search(text)
+    email = email_match.group(0) if email_match else ""
+    return Student(id=student_id, name=_student_name(text, student_id, email), email=email)
+
+
+def _read_visible_students(page: Page) -> "dict[str, Student]":
+    """Parse the currently-rendered student rows into {id: Student}."""
+    found: "dict[str, Student]" = {}
+    for row in page.locator(selectors.STUDENT_ROW).all():
+        student = _parse_student_row(row.inner_text().strip())
+        if student is not None:
+            found[student.id] = student
+    return found
+
+
 def list_students(page: Page) -> list[Student]:
-    """Read each student card. There is no id attribute on the live DOM — the
-    student id is the numeric text shown in the row; the name is the rest of
-    the visible text (first non-numeric line)."""
+    """Collect EVERY student in the marathon roster.
+
+    The roster is a virtualised list that lazy-renders rows on scroll, so we
+    read → scroll → repeat, accumulating by id, until no new students appear for
+    several consecutive passes (or a hard scroll cap). Rows without a numeric id
+    are skipped (stray render nodes), not treated as errors."""
+    collected: "dict[str, Student]" = {}
     rows = page.locator(selectors.STUDENT_ROW)
-    students: list[Student] = []
-    for row in rows.all():
-        text = row.inner_text().strip()
-        match = selectors.STUDENT_ID_RE.search(text)
-        if not match:
-            raise SelectorError(
-                f"student row has no numeric id in text {text!r}"
-            )
-        student_id = match.group(0)
-        # name = the row text with the id removed, first non-empty line.
-        name = _student_name(text, student_id)
-        students.append(Student(id=student_id, name=name))
-    return students
+    stable = 0
+    for _ in range(_MAX_SCROLLS):
+        before = len(collected)
+        collected.update(_read_visible_students(page))
+        stable = 0 if len(collected) > before else stable + 1
+        if stable >= _SCROLL_STABLE_PASSES:
+            break
+        # Advance the virtualised list by pulling the LAST rendered row into view
+        # (a window wheel doesn't reach the inner scroll container). This forces
+        # the next batch to render; previously-seen ids dedupe.
+        try:
+            if rows.count() > 0:
+                rows.last.scroll_into_view_if_needed(timeout=3000)
+        except Exception:  # noqa: BLE001 - keep collecting what we have
+            pass
+        page.wait_for_timeout(_SCROLL_WAIT_MS)
+    return list(collected.values())
 
 
-def _student_name(text: str, student_id: str) -> str:
-    """PURE: extract the display name from the student row text."""
-    for line in text.splitlines():
-        cleaned = line.replace(student_id, "").strip()
-        if cleaned:
-            return cleaned
-    return text.replace(student_id, "").strip()
+def _student_name(text: str, student_id: str, email: str = "") -> str:
+    """PURE: the display name is the text BEFORE the id (the row reads
+    "<avatar> <name> <id> <email> Прогресс ученика ..."), with the leading
+    one-letter avatar initial dropped. Falls back to the email when a student's
+    only label IS their email."""
+    norm = " ".join(text.split())
+    before = norm.split(student_id)[0]
+    if email:
+        before = before.replace(email, "")
+    parts = before.split()
+    if parts and len(parts[0]) == 1:   # drop the avatar initial ("A Nurdana" -> "Nurdana")
+        parts = parts[1:]
+    name = " ".join(parts).strip()
+    return name or email or norm.replace(student_id, "").strip()

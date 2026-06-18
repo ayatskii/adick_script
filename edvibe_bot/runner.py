@@ -141,6 +141,7 @@ def run(
     with _launch_context(config.headed) as context:
         page = ensure_logged_in(context, settings)
         open_marathon(page, settings)
+        roster_url = page.url   # stable students-roster URL (reused per student)
 
         students = list_students(page)
         if config.student_filter is not None:
@@ -152,7 +153,7 @@ def run(
         for student in students:
             _emit(on_event, {"event": "student", "student_id": student.id})
             try:
-                open_progress(page, student)
+                open_progress(page, student, roster_url)
                 lessons = awaiting_lessons(list_lessons(page))
             except Exception as exc:  # noqa: BLE001 - per-student boundary
                 try:

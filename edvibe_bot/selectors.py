@@ -21,10 +21,13 @@ FILTER_BUTTON = "text=Фильтр"
 CURATOR_OPTION = "text=Mister Adilet"        # curator pick inside "Кураторы"
 FILTER_APPLY = "button:has-text('Применить')"
 
-# Students (id + name are TEXT; no attributes)
-STUDENT_ROW = ".marathon-student-li"
+# Students (id + name + email are TEXT; no attributes). The roster is a VIRTUALISED
+# list — rows lazy-render on scroll, so list_students scrolls and accumulates.
+STUDENT_ROW = ".avatar-li"                     # one card per student (was .marathon-student-li, stale)
+STUDENT_SEARCH = "input[placeholder='Поиск учеников']"  # filter box (search by email is unique)
 STUDENT_PROGRESS_BTN = "text=Прогресс ученика"
-# student id = numeric text in the row (e.g. "3176678"); see STUDENT_ID_RE.
+# student id = 7-digit numeric text in the row (e.g. "3176678"); see STUDENT_ID_RE.
+STUDENT_EMAIL_RE = re.compile(r"[\w.+-]+@[\w.-]+\.\w+")
 
 # Progress modal + lessons (confirmed)
 PROGRESS_MODAL = ".marathon-student-progress-modal"

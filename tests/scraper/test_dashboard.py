@@ -17,6 +17,13 @@ class FakeLocator:
     def first(self):  # PROPERTY, not a method (mirrors Playwright)
         return self._children[0] if self._children else self
 
+    @property
+    def last(self):
+        return self._children[-1] if self._children else self
+
+    def scroll_into_view_if_needed(self, timeout=None):
+        pass
+
     def nth(self, i):
         return self._children[i]
 
@@ -42,17 +49,29 @@ class FakeLocator:
         self.click_count += 1
 
 
+class FakeMouse:
+    def __init__(self):
+        self.wheels = 0
+
+    def wheel(self, dx, dy):
+        self.wheels += 1
+
+
 class FakePage:
     def __init__(self, *, locators=None):
         # locators: mapping selector-string -> FakeLocator
         self._locators = locators or {}
         self.goto_calls = []
         self.click_log = []
+        self.mouse = FakeMouse()
 
     def goto(self, url):
         self.goto_calls.append(url)
 
     def wait_for_load_state(self, state=None):
+        pass
+
+    def wait_for_timeout(self, ms):
         pass
 
     def locator(self, selector):
@@ -99,27 +118,38 @@ def test_open_marathon_runs_the_six_steps_in_order():
 
 
 def test_list_students_builds_students_from_row_text():
-    # No id attribute on the live DOM: id is the numeric text in the row,
-    # name is the first non-numeric line.
+    # id = 7-digit numeric text, email = the @ token, name = the rest (minus a
+    # leading one-letter avatar initial).
     rows = FakeLocator(
         children=[
-            FakeLocator(text="Анель\n3176678"),
-            FakeLocator(text="Bauyrzhan\n3176679"),
+            FakeLocator(text="A Nurdana Ardaqqyzy 3190603 n021rd@icloud.com Прогресс ученика"),
+            FakeLocator(text="B Bauyrzhan 3176679 bau@mail.ru Прогресс ученика"),
         ]
     )
     page = FakePage(locators={selectors.STUDENT_ROW: rows})
     students = list_students(page)
     assert students == [
-        Student(id="3176678", name="Анель"),
-        Student(id="3176679", name="Bauyrzhan"),
+        Student(id="3190603", name="Nurdana Ardaqqyzy", email="n021rd@icloud.com"),
+        Student(id="3176679", name="Bauyrzhan", email="bau@mail.ru"),
     ]
 
 
-def test_list_students_raises_when_no_numeric_id():
-    rows = FakeLocator(children=[FakeLocator(text="Анель")])
+def test_list_students_dedupes_across_scroll_passes():
+    # The virtualised roster re-renders the same rows across scrolls; ids dedupe.
+    rows = FakeLocator(
+        children=[
+            FakeLocator(text="Анель 3176678 anel@mail.ru"),
+            FakeLocator(text="Анель 3176678 anel@mail.ru"),
+        ]
+    )
     page = FakePage(locators={selectors.STUDENT_ROW: rows})
-    with pytest.raises(Exception):
-        list_students(page)
+    assert list_students(page) == [Student(id="3176678", name="Анель", email="anel@mail.ru")]
+
+
+def test_list_students_skips_rows_without_id():
+    rows = FakeLocator(children=[FakeLocator(text="just a header, no id")])
+    page = FakePage(locators={selectors.STUDENT_ROW: rows})
+    assert list_students(page) == []
 
 
 def test_list_students_empty_returns_empty_list():

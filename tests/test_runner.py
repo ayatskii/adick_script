@@ -133,7 +133,7 @@ def _wire(monkeypatch, *, exercises, poster,
     monkeypatch.setattr(runner_mod, "ensure_logged_in", lambda ctx, s: page)
     monkeypatch.setattr(runner_mod, "open_marathon", lambda p, s: None)
     monkeypatch.setattr(runner_mod, "list_students", lambda p: students)
-    monkeypatch.setattr(runner_mod, "open_progress", lambda p, st: None)
+    monkeypatch.setattr(runner_mod, "open_progress", lambda p, st, url=None: None)
     monkeypatch.setattr(runner_mod, "list_lessons", lambda p: lessons)
     monkeypatch.setattr(
         runner_mod, "awaiting_lessons",

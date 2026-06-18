@@ -24,8 +24,24 @@ class Lesson:
     pupil_id: str | None = None        # URL ?pupil= — captured on open
 
 
-def open_progress(page: Page, student: Student) -> None:
-    page.locator(selectors.STUDENT_PROGRESS_BTN).click()
+def open_progress(page: Page, student: Student, roster_url: str) -> None:
+    """Open THIS student's progress modal.
+
+    The roster shows ~200 students, each with its own "Прогресс ученика" button,
+    so a bare first-match click would open the wrong student. Reset to a clean
+    roster page (clears scroll position and transient overlays left by the
+    previous student's lessons — a stray .tir-modal otherwise intercepts the
+    click), filter to this student (search is unique by email; fall back to id,
+    then name), then click their progress button."""
+    page.goto(roster_url)
+    page.wait_for_load_state("networkidle")
+    query = student.email or student.id or student.name
+    box = page.locator(selectors.STUDENT_SEARCH).first
+    box.wait_for(state="visible", timeout=15000)
+    box.fill(query)
+    page.wait_for_timeout(1800)   # let the filter narrow the list
+    page.locator(selectors.STUDENT_PROGRESS_BTN).first.click(timeout=10000)
+    page.wait_for_timeout(1500)
 
 
 def _lesson_name(row_text: str) -> str:
