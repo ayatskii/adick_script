@@ -40,11 +40,25 @@ def open_marathon(page: Page, settings: Settings) -> None:
     R0.3); if the filter flow fails we fall back to processing ALL marathon
     students rather than aborting the run.
     """
-    page.goto(selectors.NAV_CLASSES)
-    page.wait_for_load_state("networkidle")
-    _wait_click(page, selectors.MARATHONS_TAB)
-    _wait_click(page, selectors.PRE_IELTS_CARD)
-    page.wait_for_load_state("networkidle")
+    # The classes page is a Vue SPA; the "Марафоны" tab occasionally hasn't
+    # painted by networkidle. This runs ONCE per run, outside the per-student
+    # boundary, so a transient miss would kill the whole run — retry with a fresh
+    # reload before giving up.
+    last_exc: "Exception | None" = None
+    for _ in range(3):
+        try:
+            page.goto(selectors.NAV_CLASSES)
+            page.wait_for_load_state("networkidle")
+            _wait_click(page, selectors.MARATHONS_TAB, timeout=15000)
+            _wait_click(page, selectors.PRE_IELTS_CARD, timeout=15000)
+            page.wait_for_load_state("networkidle")
+            last_exc = None
+            break
+        except Exception as exc:  # noqa: BLE001 - retry transient SPA render misses
+            last_exc = exc
+            page.wait_for_timeout(1500)
+    if last_exc is not None:
+        raise last_exc
     try:
         _wait_click(page, selectors.FILTER_BUTTON, timeout=8000)
         _wait_click(page, selectors.CURATOR_OPTION, timeout=8000)
