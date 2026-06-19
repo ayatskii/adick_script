@@ -125,14 +125,15 @@ export function App() {
   const dismissToast = useCallback(() => setToast(null), [])
 
   const startRun = useCallback(async (mode: RunMode) => {
-    // Optimistically transition to the live screen with a local run state
+    // Transition to the live screen. Totals start at 0 and fill in from the
+    // backend's real `progress` events — no hardcoded counts.
     setRun({
       active: true,
       mode,
-      total: 41,
+      total: 0,
       current: 0,
       studentsDone: 0,
-      students: 17,
+      students: 0,
       finished: false,
     })
     setDialog(null)

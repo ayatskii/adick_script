@@ -1,4 +1,4 @@
-import type { ScreenProps } from '../types'
+import type { ScreenProps, StudentRow, ReviewItem, FlaggedItem, RunRow } from '../types'
 import { useApp } from '../AppContext'
 import { StatusBadge } from '../components/StatusBadge'
 
@@ -150,48 +150,43 @@ interface StatTile {
   star?: boolean
 }
 
-const STAT_TILES: StatTile[] = [
-  {
-    label: 'Pending students',
-    value: '17',
-    sub: 'of 43',
-    tileBg: 'var(--panel)',
-    glyph: '🧑‍🎓',
-    iconBg: 'var(--sky)',
-    valueFg: 'var(--ink)',
-  },
-  {
-    label: 'Lessons awaiting',
-    value: '41',
-    sub: 'to grade',
-    tileBg: 'var(--panel)',
-    glyph: '📚',
-    iconBg: 'var(--pink)',
-    valueFg: 'var(--ink)',
-  },
-  {
-    label: 'Last run',
-    value: 'OK',
-    sub: 'today 09:14',
-    tileBg: '#dde7d8',
-    glyph: '🚀',
-    iconBg: 'var(--lime)',
-    valueFg: '#1a7a2e',
-    labelFg: '#3a5a3a',
-    subFg: '#3a5a3a',
-    star: true,
-  },
-  {
-    label: 'Flagged',
-    value: '5',
-    sub: 'need review',
-    tileBg: '#ece0c0',
-    glyph: '⚑',
-    iconBg: 'var(--yellow)',
-    valueFg: '#a06a00',
-    labelFg: '#7a5a10',
-  },
-]
+// Stat tiles computed from REAL data (review queue + flagged + students + runs).
+function buildStatTiles(
+  studentRows: StudentRow[],
+  reviewItems: ReviewItem[],
+  flaggedItems: FlaggedItem[],
+  runRows: RunRow[],
+): StatTile[] {
+  const pending = reviewItems.filter(r => r.status === 'pending')
+  const pendingStudents = new Set(pending.map(r => r.student)).size
+  const lessonsAwaiting = new Set(pending.map(r => `${r.student}|${r.lesson}`)).size
+  const last = runRows[0]
+  const lastLabel = last?.statusBadgeLabel ?? ''
+  const lastDone = /done|ok|complete/i.test(lastLabel)
+  const lastValue = !last ? '—' : lastDone ? 'OK' : (lastLabel || '—')
+  const lastSub = !last ? 'no runs yet' : (last.started ?? '')
+  return [
+    {
+      label: 'Pending students', value: String(pendingStudents), sub: `of ${studentRows.length}`,
+      tileBg: 'var(--panel)', glyph: '🧑‍🎓', iconBg: 'var(--sky)', valueFg: 'var(--ink)',
+    },
+    {
+      label: 'Lessons awaiting', value: String(lessonsAwaiting), sub: 'to grade',
+      tileBg: 'var(--panel)', glyph: '📚', iconBg: 'var(--pink)', valueFg: 'var(--ink)',
+    },
+    {
+      label: 'Last run', value: lastValue, sub: lastSub,
+      tileBg: lastDone ? '#dde7d8' : 'var(--panel)', glyph: '🚀',
+      iconBg: 'var(--lime)', valueFg: lastDone ? '#1a7a2e' : 'var(--ink)',
+      labelFg: lastDone ? '#3a5a3a' : undefined, subFg: lastDone ? '#3a5a3a' : undefined,
+      star: lastDone,
+    },
+    {
+      label: 'Flagged', value: String(flaggedItems.length), sub: 'need review',
+      tileBg: '#ece0c0', glyph: '⚑', iconBg: 'var(--yellow)', valueFg: '#a06a00', labelFg: '#7a5a10',
+    },
+  ]
+}
 
 function StatTileCard({ t }: { t: StatTile }) {
   return (
@@ -262,12 +257,13 @@ function StatTileCard({ t }: { t: StatTile }) {
 // Dashboard screen
 // ------------------------------------------------------------
 export function Dashboard({ setScreen, startRun }: ScreenProps) {
-  const { runRows: RUN_ROWS } = useApp()
+  const { runRows: RUN_ROWS, studentRows, reviewItems, flaggedItems } = useApp()
+  const statTiles = buildStatTiles(studentRows, reviewItems, flaggedItems, RUN_ROWS)
   return (
     <div>
       {/* Region 1 — Stat tiles */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
-        {STAT_TILES.map((t) => (
+        {statTiles.map((t) => (
           <StatTileCard key={t.label} t={t} />
         ))}
       </div>
@@ -344,7 +340,7 @@ export function Dashboard({ setScreen, startRun }: ScreenProps) {
               Ready to grade?
             </div>
             <div style={{ marginTop: '8px', fontSize: '13px', color: '#e9e3d2', lineHeight: 1.45 }}>
-              17 students are waiting with 41 lessons. Kick off a run — start with a safe Dry-run.
+              {statTiles[0].value} students have items awaiting review. Kick off a run — start with a safe Dry-run.
             </div>
             <button
               className="squish"

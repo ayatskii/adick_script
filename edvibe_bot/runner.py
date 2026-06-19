@@ -87,6 +87,40 @@ def _emit(on_event: "Optional[EventCallback]", payload: dict) -> None:
         on_event(payload)
 
 
+def _emit_ex(
+    on_event,
+    student,
+    lesson,
+    ex,
+    status: str,
+    *,
+    score=None,
+    comment=None,
+    confidence=None,
+    reason=None,
+) -> None:
+    """Emit a per-exercise outcome event (graded | skipped | flagged) carrying the
+    REAL student/lesson/exercise + score so the live view renders the actual run."""
+    _emit(
+        on_event,
+        {
+            "event": "exercise",
+            "student_id": student.id,
+            "student_name": student.name,
+            "lesson_id": lesson.id,
+            "lesson_name": lesson.name,
+            "exercise_no": ex.number,
+            "type": getattr(ex.type, "value", str(ex.type)),
+            "status": status,
+            "score": score,
+            "score_max": ex.score_max,
+            "comment": comment,
+            "confidence": confidence,
+            "reason": reason,
+        },
+    )
+
+
 def _entry(
     *,
     student,
@@ -156,8 +190,30 @@ def run(
         if config.max_students is not None:
             students = students[: config.max_students]
 
-        for student in students:
-            _emit(on_event, {"event": "student", "student_id": student.id})
+        students_total = len(students)
+        _emit(
+            on_event,
+            {"event": "progress", "students_total": students_total, "students_done": 0},
+        )
+        for idx, student in enumerate(students):
+            _emit(
+                on_event,
+                {
+                    "event": "progress",
+                    "students_total": students_total,
+                    "students_done": idx,
+                },
+            )
+            _emit(
+                on_event,
+                {
+                    "event": "student",
+                    "student_id": student.id,
+                    "student_name": student.name,
+                    "index": idx,
+                    "students_total": students_total,
+                },
+            )
             try:
                 open_progress(page, student, roster_url)
                 lessons = awaiting_lessons(list_lessons(page))
@@ -332,6 +388,10 @@ def run(
                             audit.record(
                                 run_id, "flag", ex_target, {"reason": fail_reason}
                             )
+                            _emit_ex(
+                                on_event, student, lesson, ex, "flagged",
+                                reason=fail_reason,
+                            )
                             continue
 
                         # ---- navigate to the section, re-check grade state, and
@@ -366,6 +426,10 @@ def run(
                                     "skip",
                                     ex_target,
                                     {"reason": "already_graded"},
+                                )
+                                _emit_ex(
+                                    on_event, student, lesson, ex, "skipped",
+                                    reason="already_graded",
                                 )
                                 continue
                             modal_max = poster.open_grade_modal(page, ex)
@@ -425,6 +489,11 @@ def run(
                             audit.record(
                                 run_id, "flag", ex_target, {"reason": "parse_failed"}
                             )
+                            _emit_ex(
+                                on_event, student, lesson, ex, "flagged",
+                                score=evaluation.score, comment=evaluation.comment,
+                                confidence=evaluation.confidence, reason="parse_failed",
+                            )
                             continue
 
                         # Not allowed to submit, or below confidence threshold.
@@ -471,6 +540,13 @@ def run(
                                 flagged += 1
                             else:
                                 skipped += 1
+                            _emit_ex(
+                                on_event, student, lesson, ex,
+                                "flagged" if low_conf else "skipped",
+                                score=evaluation.score, comment=evaluation.comment,
+                                confidence=evaluation.confidence,
+                                reason="low_confidence" if low_conf else "proposal",
+                            )
                             continue
 
                         # ---- DURABILITY: claim in_progress BEFORE the click ----
@@ -516,7 +592,11 @@ def run(
                             ex_target,
                             {"dry_run": dry_run, "score": evaluation.score},
                         )
-                        _emit(on_event, {"event": "graded", **ex_target})
+                        _emit_ex(
+                            on_event, student, lesson, ex, "graded",
+                            score=evaluation.score, comment=evaluation.comment,
+                            confidence=evaluation.confidence,
+                        )
 
                     # ---- COMPLETION GATE ----
                     if (
@@ -580,6 +660,14 @@ def run(
                     )
                     continue
 
+    _emit(
+        on_event,
+        {
+            "event": "progress",
+            "students_total": students_total,
+            "students_done": students_total,
+        },
+    )
     counts = {
         "graded": graded,
         "skipped": skipped,

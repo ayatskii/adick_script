@@ -58,31 +58,43 @@ def normalize_runner_event(raw: dict) -> dict:
     data = {k: v for k, v in raw.items() if k != "event"}
 
     if kind == "student":
-        sid = raw.get("student_id")
-        return _event("student", message=f"Student {sid}", data=data)
-    if kind == "lesson_skip":
+        name = raw.get("student_name") or raw.get("student_id")
+        return _event("student", message=f"Processing {name}", data=data)
+    if kind == "student_error":
         return _event(
-            "skipped",
-            message=f"Lesson {raw.get('lesson_id')} already completed — skipped",
-            data={**data, "reason": "already_completed"},
+            "log",
+            message=f"Student {raw.get('student_id')} could not be opened",
+            data={"level": "error", **data},
         )
-    if kind == "lesson_flag":
+    if kind == "progress":
+        done = raw.get("students_done", 0)
+        total = raw.get("students_total", 0)
+        # current/total are STUDENT-based — real exercise totals aren't known up
+        # front (the runner discovers exercises lazily, section by section).
         return _event(
-            "flagged",
-            message=f"Lesson {raw.get('lesson_id')} flagged (sentinel in_progress/error)",
-            data={**data, "reason": "sentinel_in_progress_or_error"},
+            "progress",
+            message=f"{done}/{total} students",
+            data={"current": done, "total": total,
+                  "students_done": done, "students": total},
         )
-    if kind == "graded":
+    if kind == "exercise":
+        status = raw.get("status", "graded")     # graded | skipped | flagged
+        no = raw.get("exercise_no")
+        score = raw.get("score")
+        smax = raw.get("score_max")
+        if status == "graded":
+            msg = f"Graded {no} → {score}/{smax}"
+        elif status == "skipped":
+            msg = f"Proposed {no} → {score}/{smax} (awaiting review)"
+        else:
+            reason = raw.get("reason")
+            msg = f"Flagged {no}" + (f" — {reason}" if reason else "")
+        return _event(status, message=msg, data=data)
+    if kind in ("lesson_skip", "lesson_flag", "lesson_complete"):
         return _event(
-            "graded",
-            message=f"Graded exercise {raw.get('exercise_no')}",
-            data=data,
-        )
-    if kind == "lesson_complete":
-        return _event(
-            "lesson_complete",
-            message=f"Lesson {raw.get('lesson_id')} complete",
-            data=data,
+            "log",
+            message=f"Lesson {raw.get('lesson_id')} {kind.replace('lesson_', '')}",
+            data={"level": "info", **data},
         )
     # Unknown raw event -> pass through as a generic log so nothing is lost.
     return _event("log", message=str(raw), data={"level": "info", **data, "raw_event": kind})
