@@ -1,7 +1,11 @@
 # Backend (FastAPI) dependencies for the Edvibe Grader web app.
 # Install with: pip install -r requirements-backend.txt
+#               python -m playwright install chromium
+#
+# The backend runs the REAL bot on a worker thread, so it needs the bot's runtime
+# deps (playwright, openai, pydantic, python-dotenv) too — pull them in directly.
+-r requirements.txt
 fastapi
 uvicorn[standard]
 websockets
 httpx
-# (pydantic and python-dotenv come transitively via edvibe_bot/requirements.txt)
