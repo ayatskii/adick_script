@@ -1,6 +1,7 @@
 // ============================================================
 // api.ts — REST + WebSocket client
-// Base URL: VITE_API_BASE env var or http://localhost:8000
+// Base URL: VITE_API_BASE env var or http://localhost:8010
+// (8010 default avoids the common :8000 clash; matches backend/run.sh.)
 // ============================================================
 
 import type {
@@ -12,7 +13,7 @@ import type {
   FlaggedItem,
 } from './types'
 
-const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? 'http://localhost:8000'
+const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? 'http://localhost:8010'
 
 // ---- REST helpers ----
 
