@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import type {
   ScreenId, RunState, RunMode, ToastState, ToastKind, DialogKind,
-  AppHandlers, AppSharedState,
+  AppHandlers, AppSharedState, RunStartOpts,
   RunRow, ReviewItem, StudentRow, TimelineEntry, ReconcileRow, FlaggedItem,
 } from './types'
 import type { RunEvent } from './api'
@@ -124,7 +124,7 @@ export function App() {
 
   const dismissToast = useCallback(() => setToast(null), [])
 
-  const startRun = useCallback(async (mode: RunMode) => {
+  const startRun = useCallback(async (mode: RunMode, opts?: RunStartOpts) => {
     // Transition to the live screen. Totals start at 0 and fill in from the
     // backend's real `progress` events — no hardcoded counts.
     setRun({
@@ -149,11 +149,14 @@ export function App() {
       if (!phase0Done) {
         showToast('info', 'Phase 0 not done — running a simulated demo (nothing is submitted).')
       }
+      const scopeAll = opts?.scopeAll ?? true
       const resp = await apiStartRun({
         mode: apiMode,
-        scope: { all: true, students: null },
-        headed: false,
-        confidence_threshold: 0.70,
+        scope: { all: scopeAll, students: scopeAll ? null : (opts?.students ?? []) },
+        max_students: opts?.maxStudents ?? null,
+        max_lessons: opts?.maxLessons ?? null,
+        headed: opts?.headed ?? false,
+        confidence_threshold: opts?.conf ?? 0.70,
       })
 
       setActiveRunId(resp.run_id)
@@ -269,7 +272,7 @@ export function App() {
 
   const handlers: AppHandlers = {
     showToast,
-    startRun: (mode: RunMode) => { void startRun(mode) },
+    startRun: (mode: RunMode, opts?: RunStartOpts) => { void startRun(mode, opts) },
     stopRun: () => { void stopRun() },
     openDialog,
     setScreen,

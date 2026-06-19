@@ -153,12 +153,22 @@ export interface FlaggedItem {
   detail: string
 }
 
+// Scope/caps for a run, collected by the New Run form and sent to the backend.
+export interface RunStartOpts {
+  scopeAll?: boolean
+  students?: string[] | null
+  maxStudents?: number | null
+  maxLessons?: number | null
+  headed?: boolean
+  conf?: number
+}
+
 // ============================================================
 // App-level props interface (passed to all screens)
 // ============================================================
 export interface AppHandlers {
   showToast: (kind: ToastKind, message: string) => void
-  startRun: (mode: RunMode) => void
+  startRun: (mode: RunMode, opts?: RunStartOpts) => void
   stopRun: () => void
   openDialog: (kind: DialogKind) => void
   setScreen: (screen: ScreenId) => void

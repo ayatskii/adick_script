@@ -113,11 +113,19 @@ export function NewRun(props: ScreenProps) {
   const startBtn = startConfig[mode]
 
   function handleStart() {
+    const opts = {
+      scopeAll,
+      students: scopeAll ? null : picked,
+      maxStudents,
+      maxLessons,
+      headed,
+      conf,
+    }
     // Full mode opens the confirm dialog (§5.1); other modes start immediately.
     if (mode === 'full') {
       openDialog('full')
     } else {
-      startRun(mode)
+      startRun(mode, opts)
     }
   }
 
