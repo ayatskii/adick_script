@@ -34,31 +34,35 @@ def _wait_click(page: Page, selector: str, timeout: int = 30000) -> None:
 
 
 def open_marathon(page: Page, settings: Settings) -> None:
-    """classes -> Марафоны -> Pre-IELTS, then a BEST-EFFORT curator filter.
+    """Land on the Pre-IELTS marathon roster, then a BEST-EFFORT curator filter.
 
-    The curator-filter selectors (CURATOR_OPTION) are unconfirmed (Phase 0
-    R0.3); if the filter flow fails we fall back to processing ALL marathon
-    students rather than aborting the run.
+    Primary path: navigate DIRECTLY to the roster URL — the classes → Марафоны →
+    Pre-IELTS tab flow is a Vue SPA whose "Марафоны" tab intermittently never
+    paints (a wait_for timeout that, running outside the per-student boundary,
+    kills the whole run). Direct navigation avoids it entirely. Falls back to the
+    click flow only if the direct URL doesn't land on a marathon roster.
     """
-    # The classes page is a Vue SPA; the "Марафоны" tab occasionally hasn't
-    # painted by networkidle. This runs ONCE per run, outside the per-student
-    # boundary, so a transient miss would kill the whole run — retry with a fresh
-    # reload before giving up.
-    last_exc: "Exception | None" = None
-    for _ in range(3):
-        try:
-            page.goto(selectors.NAV_CLASSES)
-            page.wait_for_load_state("networkidle")
-            _wait_click(page, selectors.MARATHONS_TAB, timeout=15000)
-            _wait_click(page, selectors.PRE_IELTS_CARD, timeout=15000)
-            page.wait_for_load_state("networkidle")
-            last_exc = None
-            break
-        except Exception as exc:  # noqa: BLE001 - retry transient SPA render misses
-            last_exc = exc
-            page.wait_for_timeout(1500)
-    if last_exc is not None:
-        raise last_exc
+    page.goto(selectors.MARATHON_STUDENTS_URL)
+    page.wait_for_load_state("networkidle")
+
+    if "/marathon/" not in page.url:
+        # Direct URL bounced (e.g. session/route changed) — retry the click flow.
+        last_exc: "Exception | None" = None
+        for _ in range(3):
+            try:
+                page.goto(selectors.NAV_CLASSES)
+                page.wait_for_load_state("networkidle")
+                _wait_click(page, selectors.MARATHONS_TAB, timeout=15000)
+                _wait_click(page, selectors.PRE_IELTS_CARD, timeout=15000)
+                page.wait_for_load_state("networkidle")
+                last_exc = None
+                break
+            except Exception as exc:  # noqa: BLE001 - retry transient SPA render misses
+                last_exc = exc
+                page.wait_for_timeout(1500)
+        if last_exc is not None:
+            raise last_exc
+
     try:
         _wait_click(page, selectors.FILTER_BUTTON, timeout=8000)
         _wait_click(page, selectors.CURATOR_OPTION, timeout=8000)

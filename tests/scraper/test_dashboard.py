@@ -64,9 +64,11 @@ class FakePage:
         self.goto_calls = []
         self.click_log = []
         self.mouse = FakeMouse()
+        self.url = ""
 
     def goto(self, url):
         self.goto_calls.append(url)
+        self.url = url
 
     def wait_for_load_state(self, state=None):
         pass
@@ -104,17 +106,34 @@ class DummySettings:
     curator_name = "Mister Adilet"
 
 
-def test_open_marathon_runs_the_six_steps_in_order():
+def test_open_marathon_navigates_direct_then_filters():
+    # Direct roster URL lands on a /marathon/ page (RecordingPage.goto sets url),
+    # so the flaky Марафоны→Pre-IELTS click flow is skipped; only the best-effort
+    # curator filter clicks follow.
     page = RecordingPage()
     open_marathon(page, DummySettings())
     assert page.click_log == [
-        ("goto", selectors.NAV_CLASSES),
-        ("click", selectors.MARATHONS_TAB),
-        ("click", selectors.PRE_IELTS_CARD),
+        ("goto", selectors.MARATHON_STUDENTS_URL),
         ("click", selectors.FILTER_BUTTON),
         ("click", selectors.CURATOR_OPTION),
         ("click", selectors.FILTER_APPLY),
     ]
+
+
+def test_open_marathon_falls_back_to_click_flow_when_direct_bounces():
+    # If the direct URL doesn't land on a marathon page, fall back to the clicks.
+    class Bounced(RecordingPage):
+        def goto(self, url):
+            self.goto_calls.append(url)
+            self.click_log.append(("goto", url))
+            # direct roster bounces to login; classes goto "lands" normally
+            self.url = "" if url == selectors.MARATHON_STUDENTS_URL else url
+
+    page = Bounced()
+    open_marathon(page, DummySettings())
+    assert ("goto", selectors.MARATHON_STUDENTS_URL) in page.click_log
+    assert ("click", selectors.MARATHONS_TAB) in page.click_log
+    assert ("click", selectors.PRE_IELTS_CARD) in page.click_log
 
 
 def test_list_students_builds_students_from_row_text():

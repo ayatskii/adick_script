@@ -10,6 +10,9 @@ import re
 LOGIN_URL = "https://edvibe.com/login"
 AUTHED_URL = "https://edvibe.com/cabinet/school/classes"
 NAV_CLASSES = "https://edvibe.com/cabinet/school/classes"   # open_marathon goto target
+# Direct Pre-IELTS marathon roster URL — far more robust than clicking through
+# classes → Марафоны → Pre-IELTS (the "Марафоны" tab intermittently fails to paint).
+MARATHON_STUDENTS_URL = "https://edvibe.com/cabinet/school/marathons/marathon/110326/students"
 LOGIN_EMAIL = "input[type=email]"
 LOGIN_PASSWORD = "input[placeholder='Password']"
 LOGIN_SUBMIT = "button:has-text('Log in to your account')"
