@@ -64,24 +64,43 @@ def apply_curator_filter(page: Page, curator_name: str) -> None:
     page.wait_for_timeout(1000)
 
 
+def _goto_marathon_direct(page: Page, attempts: int = 4) -> bool:
+    """Navigate straight to the roster URL and wait for the SPA to SETTLE on a
+    /marathon/ route. Returns True once landed.
+
+    Right after goto, the Vue router can briefly sit on an interstitial/redirect
+    URL before resolving to the marathon route — so a single post-goto url check
+    races the router and falsely reports a bounce (which then drops us onto the
+    flaky Марафоны tab). We re-goto and poll the URL a few times instead."""
+    for _ in range(attempts):
+        page.goto(selectors.MARATHON_STUDENTS_URL)
+        page.wait_for_load_state("networkidle")
+        try:
+            page.wait_for_url(lambda url: "/marathon/" in url, timeout=8000)
+            return True
+        except Exception:  # noqa: BLE001 - router still settling; re-goto and retry
+            if "/marathon/" in page.url:
+                return True
+            page.wait_for_timeout(1500)
+    return "/marathon/" in page.url
+
+
 def open_marathon(page: Page, settings: Settings) -> None:
     """Land on the Pre-IELTS marathon roster, then filter to the curator.
 
     Primary path: navigate DIRECTLY to the roster URL — the classes → Марафоны →
     Pre-IELTS tab flow is a Vue SPA whose "Марафоны" tab intermittently never
     paints (a wait_for timeout that, running outside the per-student boundary,
-    kills the whole run). Direct navigation avoids it entirely. Falls back to the
-    click flow only if the direct URL doesn't land on a marathon roster.
+    kills the whole run). We retry the direct nav (waiting for the /marathon/
+    route to settle) and only fall back to the click flow if it truly never lands.
 
     The curator filter is then REQUIRED (not best-effort): grading the wrong
     teacher's students is a real, irreversible action, so a filter failure raises
     rather than falling back to the full roster.
     """
-    page.goto(selectors.MARATHON_STUDENTS_URL)
-    page.wait_for_load_state("networkidle")
-
-    if "/marathon/" not in page.url:
-        # Direct URL bounced (e.g. session/route changed) — retry the click flow.
+    if not _goto_marathon_direct(page):
+        # Direct URL never settled on /marathon/ (stale session / route change) —
+        # last resort: the click flow, itself retried for transient render misses.
         last_exc: "Exception | None" = None
         for _ in range(3):
             try:

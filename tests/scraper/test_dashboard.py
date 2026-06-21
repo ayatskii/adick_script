@@ -73,6 +73,13 @@ class FakePage:
     def wait_for_load_state(self, state=None):
         pass
 
+    def wait_for_url(self, predicate, timeout=None):
+        # Mirror Playwright: return if the current url already matches, else raise
+        # (the production retry loop catches this and re-gotos).
+        if callable(predicate) and predicate(self.url):
+            return
+        raise TimeoutError("url did not match")
+
     def wait_for_timeout(self, ms):
         pass
 
