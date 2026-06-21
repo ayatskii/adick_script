@@ -43,6 +43,9 @@ class FakePage:
     def wait_for_load_state(self, state="load", **kwargs):
         self.waited = True
 
+    def wait_for_timeout(self, ms):
+        pass
+
     def locator(self, selector):
         page = self
 

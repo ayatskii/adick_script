@@ -166,7 +166,7 @@ def _wire(monkeypatch, *, exercises, poster,
     # silence the real browser launch
     monkeypatch.setattr(
         runner_mod, "_launch_context",
-        lambda headed: _FakeCM(),
+        lambda headed, storage_state_path=None: _FakeCM(),
     )
     return page
 

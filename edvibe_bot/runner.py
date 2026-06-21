@@ -70,11 +70,20 @@ _UA = (
 
 
 @contextmanager
-def _launch_context(headed: bool):
-    """Yield a (playwright_cm, browser_context). Patched out in unit tests."""
+def _launch_context(headed: bool, storage_state_path: "str | None" = None):
+    """Yield a (playwright_cm, browser_context). Patched out in unit tests.
+
+    Loads a previously-saved storage_state (cookies) when one exists so a valid
+    session is actually REUSED — without this the context starts cookie-less and
+    every run re-logs-in (and races the SPA's client-side auth redirect)."""
+    import os
+
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=not headed, args=_STEALTH_ARGS)
-        context = browser.new_context(user_agent=_UA)
+        kwargs = {"user_agent": _UA}
+        if storage_state_path and os.path.exists(storage_state_path):
+            kwargs["storage_state"] = storage_state_path
+        context = browser.new_context(**kwargs)
         try:
             yield context
         finally:
@@ -173,7 +182,7 @@ def run(
 
     graded = skipped = flagged = errors = completed_lessons = 0
 
-    with _launch_context(config.headed) as context:
+    with _launch_context(config.headed, settings.storage_state_path) as context:
         page = ensure_logged_in(context, settings)
         open_marathon(page, settings)
         roster_url = page.url   # stable students-roster URL (reused per student)

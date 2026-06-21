@@ -31,9 +31,19 @@ def login(page: Page, settings: Settings) -> None:
 
 
 def is_session_valid(page: Page) -> bool:
-    """Probe an authed URL; the session is valid iff we are NOT bounced to login."""
+    """Probe an authed URL; the session is valid iff we are NOT bounced to login.
+
+    edvibe is a Vue SPA: ``goto`` resolves on the shell load while the URL is
+    still the authed route, and only a beat LATER does client-side auth redirect
+    an unauthenticated visitor to /login. Checking the URL immediately after goto
+    therefore reports a false-positive "valid" — the run then proceeds
+    unauthenticated and every subsequent nav bounces to /login. Wait for the SPA
+    to settle (networkidle + a short grace) before reading the URL, and match
+    /login as a substring (the redirect may carry a ?redirect= query)."""
     page.goto(selectors.AUTHED_URL)
-    return page.url != selectors.LOGIN_URL
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(1500)
+    return "/login" not in page.url
 
 
 def ensure_logged_in(context: BrowserContext, settings: Settings) -> Page:
