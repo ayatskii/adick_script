@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { ScreenProps, RunRow, TimelineEntry } from '../types'
 import { useApp } from '../AppContext'
+import { getRun } from '../api'
 import StatusBadge from '../components/StatusBadge'
 
 // ============================================================
@@ -66,6 +67,19 @@ export function History(props: ScreenProps) {
   const selectedRun = RUN_ROWS.find((r) => r.id === selectedId) ?? RUN_ROWS[0]
   const dry = selectedRun ? isDryRun(selectedRun) : false
 
+  // Fetch the REAL per-run timeline for the selected run (seed shown only until
+  // it loads / when the backend is offline).
+  const [realTimeline, setRealTimeline] = useState<TimelineEntry[] | null>(null)
+  useEffect(() => {
+    const id = selectedRun?.id
+    if (!id) return
+    let cancelled = false
+    getRun(id)
+      .then((d) => { if (!cancelled) setRealTimeline(d.timeline ?? []) })
+      .catch(() => { if (!cancelled) setRealTimeline(null) })
+    return () => { cancelled = true }
+  }, [selectedRun?.id])
+
   const tabBtnStyle = (active: boolean): CSSProperties => ({
     display: 'inline-flex',
     alignItems: 'center',
@@ -121,7 +135,7 @@ export function History(props: ScreenProps) {
       {tab === 'runs' ? (
         <RunsTab
           runRows={RUN_ROWS}
-          timelineEntries={TIMELINE_ENTRIES}
+          timelineEntries={realTimeline ?? TIMELINE_ENTRIES}
           selectedRun={selectedRun}
           selectedId={selectedId}
           onSelect={setSelectedId}
