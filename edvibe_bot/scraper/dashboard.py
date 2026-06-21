@@ -33,14 +33,49 @@ def _wait_click(page: Page, selector: str, timeout: int = 30000) -> None:
     loc.click()
 
 
+def apply_curator_filter(page: Page, curator_name: str) -> None:
+    """Open Фильтр and narrow the roster to a single curator's students.
+
+    The flow (confirmed live): click "Фильтр" → click the readonly Кураторы input
+    to OPEN its dropdown → click the EXACT curator option → assert the input's
+    value is now the curator (so we never silently keep the wrong selection) →
+    click "Применить". The exact-text match + value assertion guarantee we filter
+    to *this* curator and not a same-prefixed one.
+
+    Raises SelectorError if the filter cannot be confirmed applied — far safer
+    than the old best-effort path, which silently swallowed failures and graded
+    the ENTIRE marathon roster (~198 students) instead of one curator's ~26.
+    """
+    _wait_click(page, selectors.FILTER_BUTTON, timeout=15000)
+    _wait_click(page, selectors.CURATOR_DROPDOWN, timeout=10000)
+    # Exact match: "Mister Adilet" must not match another curator. .first guards
+    # against an option rendered twice (highlighted + plain).
+    page.get_by_text(curator_name, exact=True).first.click(timeout=10000)
+    page.wait_for_timeout(500)
+
+    selected = page.locator(selectors.CURATOR_DROPDOWN).first.input_value()
+    if (selected or "").strip() != curator_name:
+        raise SelectorError(
+            f"curator filter not applied: expected {curator_name!r} selected, "
+            f"got {selected!r} — refusing to grade the unfiltered roster"
+        )
+    _wait_click(page, selectors.FILTER_APPLY, timeout=10000)
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(1000)
+
+
 def open_marathon(page: Page, settings: Settings) -> None:
-    """Land on the Pre-IELTS marathon roster, then a BEST-EFFORT curator filter.
+    """Land on the Pre-IELTS marathon roster, then filter to the curator.
 
     Primary path: navigate DIRECTLY to the roster URL — the classes → Марафоны →
     Pre-IELTS tab flow is a Vue SPA whose "Марафоны" tab intermittently never
     paints (a wait_for timeout that, running outside the per-student boundary,
     kills the whole run). Direct navigation avoids it entirely. Falls back to the
     click flow only if the direct URL doesn't land on a marathon roster.
+
+    The curator filter is then REQUIRED (not best-effort): grading the wrong
+    teacher's students is a real, irreversible action, so a filter failure raises
+    rather than falling back to the full roster.
     """
     page.goto(selectors.MARATHON_STUDENTS_URL)
     page.wait_for_load_state("networkidle")
@@ -63,13 +98,7 @@ def open_marathon(page: Page, settings: Settings) -> None:
         if last_exc is not None:
             raise last_exc
 
-    try:
-        _wait_click(page, selectors.FILTER_BUTTON, timeout=8000)
-        _wait_click(page, selectors.CURATOR_OPTION, timeout=8000)
-        _wait_click(page, selectors.FILTER_APPLY, timeout=8000)
-        page.wait_for_load_state("networkidle")
-    except Exception:
-        pass  # curator filter unavailable/unconfirmed -> process all students
+    apply_curator_filter(page, settings.curator_name)
 
 
 def _parse_student_row(text: str) -> "Student | None":

@@ -17,11 +17,21 @@ LOGIN_EMAIL = "input[type=email]"
 LOGIN_PASSWORD = "input[placeholder='Password']"
 LOGIN_SUBMIT = "button:has-text('Log in to your account')"
 
-# Marathon nav + curator filter (confirmed)
+# Marathon nav + curator filter (confirmed live 2026-06-21).
+# The filter is a .tir-modal with three fields; "Кураторы" is a click-to-open
+# dropdown backed by a READONLY <input placeholder='Выберите куратора'>. Curator
+# options only render AFTER that input is clicked — the modal title is also
+# "Фильтр", so opening the modal alone does NOT expose the options. Picking a
+# curator sets the input's .value to the curator name (the apply-time guard reads
+# it). The marathon's curators are: Aisha, Miss Aidana, Miss Asemai,
+# Miss Ayaulym 1, Miss Darina, Miss Inkar (GE), Mister Adilet, Mr. Yerrasyl,
+# Mr. Yerulan — exactly ONE Adilet, so an exact-text match can't collide.
 MARATHONS_TAB = "text=Марафоны"
 PRE_IELTS_CARD = "text=Pre-IELTS"
 FILTER_BUTTON = "text=Фильтр"
-CURATOR_OPTION = "text=Mister Adilet"        # curator pick inside "Кураторы"
+CURATOR_DROPDOWN = "input[placeholder='Выберите куратора']"  # click to open the list
+# CURATOR_OPTION is matched by EXACT text (get_by_text(..., exact=True)) so
+# "Mister Adilet" never matches a different curator; the value lives in settings.
 FILTER_APPLY = "button:has-text('Применить')"
 
 # Students (id + name + email are TEXT; no attributes). The roster is a VIRTUALISED

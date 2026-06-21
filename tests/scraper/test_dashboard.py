@@ -91,12 +91,30 @@ class RecordingPage(FakePage):
         super().goto(url)
         self.click_log.append(("goto", url))
 
+    # The curator dropdown's readonly input reports this value after a pick. Set
+    # to a wrong value in a test to exercise the apply-time verification guard.
+    curator_value = "Mister Adilet"
+
     def locator(self, selector):
         page = self
 
         class _Click(FakeLocator):
             def click(_self):
                 page.click_log.append(("click", selector))
+
+            def input_value(_self):
+                if selector == selectors.CURATOR_DROPDOWN:
+                    return page.curator_value
+                return ""
+
+        return _Click()
+
+    def get_by_text(self, text, exact=False):
+        page = self
+
+        class _Click(FakeLocator):
+            def click(_self, timeout=None):
+                page.click_log.append(("get_by_text", text))
 
         return _Click()
 
@@ -108,16 +126,31 @@ class DummySettings:
 
 def test_open_marathon_navigates_direct_then_filters():
     # Direct roster URL lands on a /marathon/ page (RecordingPage.goto sets url),
-    # so the flaky Марафоны→Pre-IELTS click flow is skipped; only the best-effort
-    # curator filter clicks follow.
+    # so the flaky Марафоны→Pre-IELTS click flow is skipped; the curator filter
+    # opens the modal, opens the Кураторы dropdown, picks the exact curator, then
+    # applies.
     page = RecordingPage()
     open_marathon(page, DummySettings())
     assert page.click_log == [
         ("goto", selectors.MARATHON_STUDENTS_URL),
         ("click", selectors.FILTER_BUTTON),
-        ("click", selectors.CURATOR_OPTION),
+        ("click", selectors.CURATOR_DROPDOWN),
+        ("get_by_text", "Mister Adilet"),
         ("click", selectors.FILTER_APPLY),
     ]
+
+
+def test_open_marathon_raises_when_curator_not_selected():
+    # If the dropdown pick didn't take (input value stays wrong), the filter is
+    # NOT confirmed → raise instead of silently grading the whole roster.
+    from edvibe_bot.errors import SelectorError
+
+    page = RecordingPage()
+    page.curator_value = ""   # selection never registered
+    with pytest.raises(SelectorError):
+        open_marathon(page, DummySettings())
+    # crucially, Применить was never clicked
+    assert ("click", selectors.FILTER_APPLY) not in page.click_log
 
 
 def test_open_marathon_falls_back_to_click_flow_when_direct_bounces():
