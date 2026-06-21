@@ -87,6 +87,9 @@ class FakeLocator:
     def inner_text(self):
         return self._text
 
+    def input_value(self):
+        return self._attrs.get("value", "")
+
     def get_attribute(self, name):
         return self._attrs.get(name)
 
@@ -105,7 +108,7 @@ class FakePage:
         return FakeLocator(children=[])
 
 
-def _block(*, text, audio_src=None, grade_button=False, graded_score=None, answer=None):
+def _block(*, text, audio_src=None, grade_button=False, graded_score=None, answer=None, inputs=None):
     """Models the confirmed live DOM:
     - grade_button=True  → an ungraded manual exercise exposing the
       "Оценить упражнение" trigger (selectors.GRADE_EXERCISE_BTN).
@@ -134,6 +137,10 @@ def _block(*, text, audio_src=None, grade_button=False, graded_score=None, answe
             FakeLocator(children=[FakeLocator(text="Оценить упражнение")])
             if grade_button
             else FakeLocator(children=[])
+        ),
+        "textarea": FakeLocator(children=[]),
+        "input[type='text'], input:not([type])": FakeLocator(
+            children=[FakeLocator(attrs={"value": v}) for v in (inputs or [])]
         ),
     }
     return FakeLocator(text=text, attrs={"__nested__": nested})
@@ -188,6 +195,21 @@ def test_list_exercises_answer_is_editor_not_instructions():
     ex = list_exercises(page, lesson_id="L", section="Grammar")[0]
     assert ex.answer_text == "My uncle used to be an artist."
     assert "Rewrite the sentences" not in (ex.answer_text or "")
+
+
+def test_list_exercises_reads_fill_in_the_blank_inputs():
+    # A fill-in answer lives in <input>.value (NOT innerText / editor). It must be
+    # captured so a real answer is never mis-flagged as empty.
+    block = _block(
+        text="5 Complete the sentences.",
+        grade_button=True,
+        answer="",  # editor empty
+        inputs=["used to", "would"],
+    )
+    page = FakePage(blocks=[block])
+    ex = list_exercises(page, lesson_id="L", section="Grammar")[0]
+    assert ex.answer_text == "used to\nwould"
+    assert ex.type is ExerciseType.TEXT
 
 
 def test_list_exercises_blank_writing_exercise_has_no_answer():

@@ -1,5 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import type { ScreenProps } from '../types'
+import { useEffect, useRef, useState } from 'react'
+import { getSettings, putSettings } from '../api'
 import { SETTINGS_DEFAULTS } from '../data'
 
 // ============================================================
@@ -117,10 +119,35 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 // ============================================================
 export function Settings(props: ScreenProps) {
   const { showToast } = props
-  const d = SETTINGS_DEFAULTS
+  const [live, setLive] = useState<Record<string, unknown> | null>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  // Load the real settings (real config values + any saved overlay) on mount.
+  useEffect(() => {
+    getSettings().then(setLive).catch(() => {})
+  }, [])
+
+  // Real values when loaded; seed only as a pre-load placeholder.
+  const d = { ...SETTINGS_DEFAULTS, ...(live ?? {}) } as typeof SETTINGS_DEFAULTS
+
+  function save() {
+    const root = rootRef.current
+    if (!root) return
+    const patch: Record<string, string> = {}
+    root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('[data-key]').forEach((el) => {
+      const k = el.getAttribute('data-key')
+      if (k) patch[k] = el.value
+    })
+    putSettings(patch)
+      .then((next) => { setLive(next); showToast('ok', 'Settings saved') })
+      .catch(() => showToast('warn', 'Save failed — is the backend running?'))
+  }
 
   return (
     <div
+      ref={rootRef}
+      // remount editable inputs (defaultValue) once real settings load
+      key={live ? 'loaded' : 'init'}
       style={{
         maxWidth: '760px',
         margin: '0 auto',
@@ -200,10 +227,10 @@ export function Settings(props: ScreenProps) {
               <SectionLabel>Models</SectionLabel>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 <Field label="Transcription model">
-                  <input type="text" defaultValue={d.transcriptionModel} style={monoInput} />
+                  <input type="text" defaultValue={d.transcriptionModel} data-key="transcriptionModel" style={monoInput} />
                 </Field>
                 <Field label="Evaluation model">
-                  <input type="text" defaultValue={d.evaluationModel} style={monoInput} />
+                  <input type="text" defaultValue={d.evaluationModel} data-key="evaluationModel" style={monoInput} />
                 </Field>
               </div>
             </div>
@@ -212,7 +239,7 @@ export function Settings(props: ScreenProps) {
               <SectionLabel>Grading</SectionLabel>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 <Field label="Score scale">
-                  <input type="text" defaultValue={d.scoreScale} style={inputBase} />
+                  <input type="text" defaultValue={d.scoreScale} data-key="scoreScale" style={inputBase} />
                 </Field>
                 <Field label="Confidence threshold">
                   <input
@@ -220,13 +247,13 @@ export function Settings(props: ScreenProps) {
                     step="0.01"
                     min="0"
                     max="1"
-                    defaultValue={d.confidenceThreshold}
+                    defaultValue={d.confidenceThreshold} data-key="confidenceThreshold"
                     style={{ ...inputBase, fontFamily: MINCHO, fontWeight: 700, fontSize: '16px' }}
                   />
                 </Field>
                 <Field label="Rubric notes">
                   <textarea
-                    defaultValue={d.rubricNotes}
+                    defaultValue={d.rubricNotes} data-key="rubricNotes"
                     style={{ ...inputBase, minHeight: '72px', resize: 'vertical', lineHeight: 1.5 }}
                   />
                 </Field>
@@ -244,24 +271,45 @@ export function Settings(props: ScreenProps) {
         <div style={cardBodyStyle}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
             <Field label="Default mode">
-              <input type="text" defaultValue={d.defaultMode} style={inputBase} />
+              <input type="text" defaultValue={d.defaultMode} data-key="defaultMode" style={inputBase} />
             </Field>
             <Field label="Pacing delay (ms)">
               <input
                 type="number"
-                defaultValue={d.pacingDelayMs}
+                defaultValue={d.pacingDelayMs} data-key="pacingDelayMs"
                 style={{ ...inputBase, fontFamily: MINCHO, fontWeight: 700, fontSize: '16px' }}
               />
             </Field>
             <Field label="Marathon">
-              <input type="text" defaultValue={d.marathon} style={inputBase} />
+              <input type="text" defaultValue={d.marathon} data-key="marathon" style={inputBase} />
             </Field>
             <Field label="Curator">
-              <input type="text" defaultValue={d.curator} style={inputBase} />
+              <input type="text" defaultValue={d.curator} data-key="curator" style={inputBase} />
             </Field>
           </div>
         </div>
       </section>
+
+      {/* ---------- Save ---------- */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+        <button
+          className="squish"
+          onClick={save}
+          style={{
+            padding: '11px 22px',
+            border: '1.5px solid var(--line)',
+            borderRadius: '5px',
+            background: 'var(--violet)',
+            color: '#fff',
+            fontFamily: MINCHO,
+            fontWeight: 800,
+            fontSize: '14px',
+            boxShadow: '4px 4px 13px var(--shadowc)',
+          }}
+        >
+          Save settings
+        </button>
+      </div>
 
       {/* ---------- Danger zone ---------- */}
       <section

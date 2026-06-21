@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ScreenProps, ReviewItem, ReviewItemType, ReviewItemStatus } from '../types'
 import { useApp } from '../AppContext'
+import { decideQueue, submitQueue } from '../api'
 import StatusBadge from '../components/StatusBadge'
 
 // ============================================================
@@ -125,7 +126,16 @@ export function ReviewQueue(props: ScreenProps) {
   const [items, setItems] = useState<ReviewItem[]>(() =>
     seedItems.map((it) => ({ ...it })),
   )
+  // Keep in sync when the real queue (re)loads from the backend.
+  useEffect(() => {
+    setItems(seedItems.map((it) => ({ ...it })))
+  }, [seedItems])
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
+
+  // Persist a per-item decision to the backend (best-effort; UI stays responsive).
+  function persist(id: string, decision: 'approved' | 'rejected' | 'edited', score?: number, comment?: string) {
+    void decideQueue(id, { decision, score, comment }).catch(() => {})
+  }
 
   const allDone = items.every((it) => it.status === 'submitted')
 
@@ -165,11 +175,14 @@ export function ReviewQueue(props: ScreenProps) {
   }
 
   function approve(id: string) {
+    const it = items.find((x) => x.id === id)
     patch(id, { status: 'approved' })
+    if (it) persist(id, it.edited ? 'edited' : 'approved', it.score, it.comment)
   }
 
   function reject(id: string) {
     patch(id, { status: 'rejected' })
+    persist(id, 'rejected')
   }
 
   function approveHighConfidence() {
@@ -178,6 +191,7 @@ export function ReviewQueue(props: ScreenProps) {
       prev.map((it) => {
         if (it.status !== 'submitted' && it.conf >= 0.85) {
           n += 1
+          persist(it.id, it.edited ? 'edited' : 'approved', it.score, it.comment)
           return { ...it, status: 'approved' }
         }
         return it
@@ -192,6 +206,7 @@ export function ReviewQueue(props: ScreenProps) {
       prev.map((it) => {
         if (it.status !== 'submitted') {
           n += 1
+          persist(it.id, it.edited ? 'edited' : 'approved', it.score, it.comment)
           return { ...it, status: 'approved' }
         }
         return it
@@ -205,10 +220,16 @@ export function ReviewQueue(props: ScreenProps) {
       showToast('warn', 'Nothing approved yet — approve some grades first.')
       return
     }
-    setItems((prev) =>
-      prev.map((it) => (it.status === 'approved' ? { ...it, status: 'submitted' } : it)),
-    )
-    showToast('ok', `Submitted ${approvedN} ${approvedN === 1 ? 'grade' : 'grades'}`)
+    const n = approvedN
+    void submitQueue()
+      .then((r) => {
+        setItems((prev) =>
+          prev.map((it) => (it.status === 'approved' ? { ...it, status: 'submitted' } : it)),
+        )
+        const count = r?.submitted ?? n
+        showToast('ok', `Submitted ${count} ${count === 1 ? 'grade' : 'grades'}`)
+      })
+      .catch(() => showToast('warn', 'Submit failed — is the backend running?'))
   }
 
   // ----------------------------------------------------------

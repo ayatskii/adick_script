@@ -69,8 +69,17 @@ def _read_written_answer(block) -> str | None:
     (an unanswered exercise), so the runner's empty-answer guard flags it instead
     of grading the instructions.
     """
-    editor = block.locator(selectors.ANSWER_EDITOR)
-    parts = [(node.inner_text() or "").strip() for node in editor.all()]
+    parts: list[str] = []
+    # Rich-text writing answers live in the contenteditable editor...
+    for node in block.locator(selectors.ANSWER_EDITOR).all():
+        parts.append((node.inner_text() or "").strip())
+    # ...fill-in-the-blank / short answers live in textareas + text inputs, whose
+    # .value is NOT in innerText — read them so those answers aren't lost (which
+    # would mis-flag a real answer as empty_answer).
+    for node in block.locator("textarea").all():
+        parts.append((node.input_value() or "").strip())
+    for node in block.locator("input[type='text'], input:not([type])").all():
+        parts.append((node.input_value() or "").strip())
     answer = "\n".join(part for part in parts if part).strip()
     return answer or None
 
