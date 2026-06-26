@@ -373,17 +373,22 @@ def test_zero_manual_exercises_lesson_not_completed(monkeypatch):
     assert report.completed_lessons == 0
 
 
-def test_flagged_exercise_blocks_completion(monkeypatch):
+def test_blank_exercise_does_not_block_completion(monkeypatch):
+    # A blank (unanswered) exercise is flagged empty_answer, but that is NOT
+    # ungraded manual-check work — the student just left it blank — so the lesson
+    # still completes once every ANSWERED task is graded. (A real answer the bot
+    # can't grade, e.g. low confidence, DOES still block — see the tests above.)
     store = FakeStore()
     poster = RecordingPoster()
     good = _text_exercise(element_id="ex-good")
-    bad = _text_exercise(element_id="ex-bad", answer="  ")  # empty → flagged
+    bad = _text_exercise(element_id="ex-bad", answer="  ")  # blank → empty_answer
     _wire(monkeypatch, exercises=[good, bad], poster=poster)
     report = run(RunConfig(mode="full_auto"), _settings(), store)
     assert ("ex-good", 8, False) in poster.grade_calls   # one graded
     assert report.graded == 1
     assert report.flagged == 1
-    assert poster.complete_calls == []                   # blocked by flag
+    assert poster.complete_calls != []                   # completes despite the blank
+    assert report.completed_lessons == 1
 
 
 def test_audio_download_none_flagged(monkeypatch):

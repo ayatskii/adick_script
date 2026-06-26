@@ -48,6 +48,12 @@ PROGRESS_MODAL_CLOSE = ".marathon-student-progress-modal .icon.close"
 LESSON_ROW = ".marathon-modules-lessons-lesson-li"
 LESSON_OPEN_BUTTON = "text=Открыть урок"
 # lesson name = LESSON_ROW innerText first line ("Lesson 14: Entertainment").
+# A finished lesson row shows a green "Done" tag containing this icon; rows
+# WITHOUT it still hold ungraded/awaiting work. Validated live (2026-06-23): a
+# "Done" row never contains answered-ungraded work, so it is safe to skip without
+# opening it — which avoids opening the bulk of already-finished lessons (the
+# dominant cost of a full run).
+LESSON_DONE_MARKER = ".iconedv-Done"
 
 # Lesson view (confirmed live on Nurdana L18, 2026-06-16)
 # The marathon lesson player needs ~6-8s to render; gate on SECTION_ITEM existing

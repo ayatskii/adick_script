@@ -6,6 +6,7 @@ import pytest
 import edvibe_bot.evaluator.text as text_mod
 from edvibe_bot.evaluator.text import is_blank_answer
 from edvibe_bot.config import Settings
+from edvibe_bot.errors import EvaluatorUnavailable
 from edvibe_bot.evaluator.schema import EvalRequest, Evaluation, ExerciseType
 
 
@@ -157,3 +158,63 @@ def test_unparseable_json_returns_parse_failed(monkeypatch):
     assert result.rationale == "parse_failed"
     assert result.score == 0
     assert result.confidence == 0.0
+
+
+# ---- non-recoverable account errors (quota / auth) ----
+#
+# A 429 'insufficient_quota' (exhausted OpenAI billing) or an invalid key cannot
+# recover within a run. Retrying 3x per exercise across ~200 students just flags
+# the whole roster as a vague 'parse_failed'. The evaluator must instead raise
+# EvaluatorUnavailable on the FIRST such error so the runner can abort loudly.
+
+
+class _CodedOpenAIError(Exception):
+    """Stand-in for an openai.APIStatusError carrying an error `code`."""
+
+    def __init__(self, message: str, code: str):
+        super().__init__(message)
+        self.code = code
+
+
+def test_insufficient_quota_raises_unavailable_without_retrying(monkeypatch):
+    holder = _install_fake(
+        monkeypatch,
+        [_CodedOpenAIError("Error code: 429 - insufficient_quota", "insufficient_quota")],
+    )
+    with pytest.raises(EvaluatorUnavailable):
+        text_mod.evaluate(_req(), _settings())
+    # Fail fast: do NOT burn the 3-attempt retry budget on a hard quota error.
+    assert holder["client"]._completions.calls == 1
+
+
+def test_quota_detected_from_message_when_no_code(monkeypatch):
+    holder = _install_fake(
+        monkeypatch,
+        [RuntimeError("You exceeded your current quota, please check your plan")],
+    )
+    with pytest.raises(EvaluatorUnavailable):
+        text_mod.evaluate(_req(), _settings())
+    assert holder["client"]._completions.calls == 1
+
+
+def test_invalid_api_key_raises_unavailable(monkeypatch):
+    holder = _install_fake(
+        monkeypatch, [_CodedOpenAIError("Incorrect API key provided", "invalid_api_key")]
+    )
+    with pytest.raises(EvaluatorUnavailable):
+        text_mod.evaluate(_req(), _settings())
+    assert holder["client"]._completions.calls == 1
+
+
+def test_transient_rate_limit_message_is_not_fatal(monkeypatch):
+    # A plain "rate limit" (no quota exhaustion) stays recoverable: retried, and
+    # only flagged parse_failed if it never succeeds — never a hard abort.
+    payload = json.dumps(
+        {"score": 6, "comment": "good", "rationale": "r", "confidence": 0.8}
+    )
+    holder = _install_fake(
+        monkeypatch, [RuntimeError("rate limit exceeded, slow down"), payload]
+    )
+    result = text_mod.evaluate(_req(), _settings())
+    assert result.score == 6
+    assert holder["client"]._completions.calls == 2

@@ -5,7 +5,7 @@ from typing import Callable, Optional
 from playwright.sync_api import sync_playwright
 
 from edvibe_bot import selectors  # noqa: F401  (kept for parity with sibling modules)
-from edvibe_bot.errors import SelectorError
+from edvibe_bot.errors import SelectorError, EvaluatorUnavailable
 from edvibe_bot.config import Settings
 from edvibe_bot.audit.log import AuditLog, get_logger
 from edvibe_bot.state.store import Store, LedgerEntry, LedgerStatus
@@ -44,6 +44,12 @@ class RunConfig:
     max_lessons: "int | None" = None
     headed: bool = False
     confidence_threshold: float = 0.6
+    # When True, open EVERY lesson instead of only the not-"Done" ones. Slower
+    # (the default skips already-finished lessons); use for a paranoid full sweep.
+    all_lessons: bool = False
+    # When True, the AI grades EVERY answered exercise regardless of confidence —
+    # nothing is held back for human review. The confidence threshold is ignored.
+    ai_full_control: bool = False
 
 
 @dataclass
@@ -181,6 +187,10 @@ def run(
     dry_run = config.mode != "full_auto"
 
     graded = skipped = flagged = errors = completed_lessons = 0
+    students_total = 0
+    # Set when an evaluation hits a non-recoverable OpenAI error (quota/key): the
+    # run aborts loudly instead of flagging the entire roster as parse_failed.
+    fatal_error: "EvaluatorUnavailable | None" = None
 
     with _launch_context(config.headed, settings.storage_state_path) as context:
         page = ensure_logged_in(context, settings)
@@ -225,7 +235,8 @@ def run(
             )
             try:
                 open_progress(page, student, roster_url)
-                lessons = awaiting_lessons(list_lessons(page))
+                all_rows = list_lessons(page)
+                lessons = all_rows if config.all_lessons else awaiting_lessons(all_rows)
             except Exception as exc:  # noqa: BLE001 - per-student boundary
                 try:
                     page.screenshot(
@@ -256,16 +267,20 @@ def run(
                     skipped += 1
                     _emit(on_event, {"event": "lesson_skip", **target})
                     continue
-                if store.get_lesson_status(student.id, lesson.id) in (
-                    "in_progress",
-                    "error",
-                ):
+                # Only an INTERRUPTED completion (sentinel "in_progress", written
+                # right before the irreversible "Завершить урок" click) is unsafe
+                # to retry blindly — flag it for a human. A prior "error" sentinel,
+                # by contrast, is almost always a transient nav/render timeout; we
+                # RETRY the lesson so its answered work still gets graded. Re-grading
+                # is safe: already-graded exercises are guarded by is_exercise_done
+                # and the grade-time is_already_graded live re-check.
+                if store.get_lesson_status(student.id, lesson.id) == "in_progress":
                     flagged += 1
                     audit.record(
                         run_id,
                         "flag_lesson",
                         target,
-                        {"reason": "sentinel_in_progress_or_error"},
+                        {"reason": "sentinel_in_progress"},
                     )
                     _emit(on_event, {"event": "lesson_flag", **target})
                     continue
@@ -392,7 +407,14 @@ def run(
                                     dry_run=dry_run,
                                 )
                             )
-                            blocked = True
+                            # An UNANSWERED exercise (empty_answer) is not ungraded
+                            # manual-check work — the student left it blank, there is
+                            # nothing to check — so it must NOT block finishing the
+                            # lesson once every ANSWERED task is graded. Any other
+                            # failure (a real answer we couldn't grade: audio download
+                            # / gather error) still blocks and needs human review.
+                            if fail_reason != "empty_answer":
+                                blocked = True
                             flagged += 1
                             audit.record(
                                 run_id, "flag", ex_target, {"reason": fail_reason}
@@ -506,14 +528,16 @@ def run(
                             continue
 
                         # Not allowed to submit, or below confidence threshold.
-                        if (not submit_allowed) or (
+                        # In ai_full_control mode the AI grades regardless of
+                        # confidence — nothing is flagged for human review — so the
+                        # threshold is ignored (only the no-submit modes still skip).
+                        below_threshold = (not config.ai_full_control) and (
                             evaluation.confidence < config.confidence_threshold
-                        ):
+                        )
+                        if (not submit_allowed) or below_threshold:
                             if modal_open:
                                 poster.cancel_grade_modal(page)
-                            low_conf = (
-                                evaluation.confidence < config.confidence_threshold
-                            )
+                            low_conf = below_threshold
                             status = (
                                 LedgerStatus.FLAGGED.value
                                 if low_conf
@@ -608,13 +632,23 @@ def run(
                         )
 
                     # ---- COMPLETION GATE ----
+                    # Finish the lesson once EVERY manual-check task that needed
+                    # checking has been graded. `blocked` is now only set by an
+                    # answered-but-ungraded task (low-confidence, parse/gather/audio
+                    # failure, no stable id, prior in-progress) — NOT by an unanswered
+                    # (empty_answer) exercise, which the student simply left blank. So
+                    # a lesson with graded answers + some blanks now completes.
+                    # `graded_this_run >= 1` still guards against finishing a lesson
+                    # where nothing was graded at all. A stale "error" sentinel must
+                    # not veto completion; only a live "in_progress" (mid-completion)
+                    # does — and such a lesson was already skipped above.
                     if (
                         submit_allowed
                         and manual_count > 0
                         and not blocked
                         and graded_this_run >= 1
                         and store.get_lesson_status(student.id, lesson.id)
-                        not in ("in_progress", "error")
+                        != "in_progress"
                     ):
                         store.record_lesson_completion_intent(
                             student.id, lesson.id, run_id
@@ -633,6 +667,11 @@ def run(
                         _emit(on_event, {"event": "lesson_complete", **target})
 
                 except Exception as lesson_exc:  # noqa: BLE001 - per-lesson boundary (covers SelectorError)
+                    if isinstance(lesson_exc, EvaluatorUnavailable):
+                        # Non-recoverable (exhausted quota / bad key): abort the
+                        # whole run rather than logging one more per-lesson error.
+                        fatal_error = lesson_exc
+                        break
                     try:
                         page.screenshot(
                             path=f"reports/error-{run_id}-{student.id}-{lesson.id}.png"
@@ -668,6 +707,38 @@ def run(
                         run_id, "lesson_error", target, {"error": str(lesson_exc)}
                     )
                     continue
+
+            if fatal_error is not None:
+                # A fatal evaluator error broke the lesson loop; stop the run.
+                break
+
+    if fatal_error is not None:
+        counts = {
+            "graded": graded,
+            "skipped": skipped,
+            "flagged": flagged,
+            "errors": errors,
+            "completed_lessons": completed_lessons,
+        }
+        audit.record(
+            run_id,
+            "run_aborted",
+            {},
+            {"reason": "evaluator_unavailable", "error": str(fatal_error)},
+        )
+        _emit(
+            on_event,
+            {"event": "run_error", "fatal": True, "message": str(fatal_error)},
+        )
+        store.finish_run(run_id, "error", counts)
+        return RunReport(
+            run_id=run_id,
+            graded=graded,
+            skipped=skipped,
+            flagged=flagged,
+            errors=errors,
+            completed_lessons=completed_lessons,
+        )
 
     _emit(
         on_event,

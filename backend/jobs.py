@@ -90,6 +90,14 @@ def normalize_runner_event(raw: dict) -> dict:
             reason = raw.get("reason")
             msg = f"Flagged {no}" + (f" — {reason}" if reason else "")
         return _event(status, message=msg, data=data)
+    if kind == "run_error":
+        # A fatal, non-recoverable runner error (e.g. OpenAI quota exhausted):
+        # surface it as a prominent error, not a buried log line.
+        return _event(
+            "error",
+            message=raw.get("message", "Run aborted"),
+            data={"level": "err", **data},
+        )
     if kind in ("lesson_skip", "lesson_flag", "lesson_complete"):
         return _event(
             "log",

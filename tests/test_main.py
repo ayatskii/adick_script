@@ -62,6 +62,17 @@ def test_headed_flag_sets_true():
     assert cfg.headed is True
 
 
+def test_all_lessons_flag_defaults_false_and_sets_true():
+    assert build_run_config(["--mode", "full_auto"]).all_lessons is False
+    assert build_run_config(["--mode", "full_auto", "--all-lessons"]).all_lessons is True
+
+
+def test_no_human_review_flag_sets_ai_full_control():
+    assert build_run_config(["--mode", "full_auto"]).ai_full_control is False
+    cfg = build_run_config(["--mode", "full_auto", "--no-human-review"])
+    assert cfg.ai_full_control is True
+
+
 def test_student_offset_defaults_zero_and_parses():
     assert build_run_config(["--mode", "dry_run"]).student_offset == 0
     cfg = build_run_config(["--mode", "dry_run", "--student-offset", "50"])

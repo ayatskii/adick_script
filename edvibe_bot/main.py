@@ -80,6 +80,24 @@ def build_run_config(argv: list[str], default_confidence: float = 0.6) -> RunCon
         help="Run the browser headed (visible) instead of headless.",
     )
     parser.add_argument(
+        "--all-lessons",
+        action="store_true",
+        help=(
+            "Open EVERY lesson, including those the platform marks 'Done'. By "
+            "default the bot skips Done lessons (they hold no ungraded work) for a "
+            "large speed-up; pass this for a paranoid full sweep."
+        ),
+    )
+    parser.add_argument(
+        "--no-human-review",
+        action="store_true",
+        help=(
+            "Let the AI grade EVERY answered exercise regardless of confidence — "
+            "nothing is held back for human review (the confidence threshold is "
+            "ignored). Unanswered exercises are still skipped (nothing to grade)."
+        ),
+    )
+    parser.add_argument(
         "--confidence",
         type=float,
         default=None,
@@ -106,6 +124,8 @@ def build_run_config(argv: list[str], default_confidence: float = 0.6) -> RunCon
         max_lessons=args.max_lessons,
         headed=args.headed,
         confidence_threshold=threshold,
+        all_lessons=args.all_lessons,
+        ai_full_control=args.no_human_review,
     )
 
 
